@@ -11,9 +11,10 @@ TurkeyBowl is a simple web application for managing an annual flag football even
 
 ## Key Features to Remember
 1. **Public pages**: Homepage, Hall of Fame/History, Roster, Teams
-2. **Admin-only**: Draft interface with drag-and-drop functionality
+2. **Admin-only**: Draft interface with drag-and-drop functionality, Hall of Fame management
 3. **Player management**: CRUD operations for player profiles with photo uploads
 4. **Draft system**: Supports 3-4 teams, real-time updates to database
+5. **Hall of Fame CRUD**: Complete admin interface for managing championships, awards, and records
 
 ## Development Guidelines
 - Keep all code in `index.php`
@@ -28,17 +29,33 @@ TurkeyBowl is a simple web application for managing an annual flag football even
 - Verify mobile responsiveness
 - Check admin authentication flow
 - Validate image upload for player photos
+- Test Hall of Fame CRUD operations (add/edit/delete championships, awards, records)
+- Verify retro Madden styling consistency across all pages
 
 ## Common Commands
 - **Run locally**: `php -S localhost:8000`
 - **Database**: SQLite file will be created automatically
 
 ## Important Notes
-- Public users can view all content except draft interface
-- Only admin can modify data
+- Public users can view all content except draft interface and admin pages
+- Only admin can modify data (admin@turkeybowl.com / admin123)
 - Player photos must be PNG or JPEG
 - Team count is configurable (3-4 teams)
 - Draft updates save instantly to database
+- Hall of Fame data can be managed through admin interface with tabbed navigation
+- Current branding: "EG TURKEY BOWL" (header) and "Turkey Bowl 2025" (homepage)
+
+## Admin Interface Features
+- **Hall of Fame Management**: Tabbed interface for championships, awards, and records
+- **CRUD Operations**: Add, edit, delete functionality with JavaScript prompts and confirmations
+- **Form Validation**: Input validation and success/error messaging
+- **Retro Styling**: Maintains Madden 2003-2005 aesthetic with metallic effects
+
+## Style Guide Implementation
+- **Navigation**: 3D metallic buttons with hover effects and orange active states
+- **Cards**: Enhanced shadows, metallic borders, and gradient effects
+- **Typography**: Bold headers with text shadows and proper contrast
+- **Colors**: Navy blue (#1a2332), bright orange (#ff6600), metallic silver (#c0c0c0), gold (#ffd700)
 
 ## Code Documentation Guidelines
 
