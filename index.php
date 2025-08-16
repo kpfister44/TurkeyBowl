@@ -153,6 +153,210 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header('Location: ?page=home');
                 exit;
                 break;
+                
+            // Championship CRUD operations
+            case 'add_championship':
+                requireAdmin();
+                $year = filter_var($_POST['year'] ?? '', FILTER_VALIDATE_INT);
+                $team_name = trim($_POST['team_name'] ?? '');
+                
+                if ($year && $team_name && $year >= 1900 && $year <= 2100) {
+                    $stmt = $db->prepare('INSERT INTO championships (year, team_name) VALUES (?, ?)');
+                    $stmt->bindValue(1, $year);
+                    $stmt->bindValue(2, $team_name);
+                    if ($stmt->execute()) {
+                        $_SESSION['success_message'] = 'Championship added successfully!';
+                    } else {
+                        $_SESSION['error_message'] = 'Error adding championship.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Please provide valid year and team name.';
+                }
+                header('Location: ?page=admin&tab=championships');
+                exit;
+                break;
+                
+            case 'edit_championship':
+                requireAdmin();
+                $id = filter_var($_POST['id'] ?? '', FILTER_VALIDATE_INT);
+                $year = filter_var($_POST['year'] ?? '', FILTER_VALIDATE_INT);
+                $team_name = trim($_POST['team_name'] ?? '');
+                
+                if ($id && $year && $team_name && $year >= 1900 && $year <= 2100) {
+                    $stmt = $db->prepare('UPDATE championships SET year = ?, team_name = ? WHERE id = ?');
+                    $stmt->bindValue(1, $year);
+                    $stmt->bindValue(2, $team_name);
+                    $stmt->bindValue(3, $id);
+                    if ($stmt->execute()) {
+                        $_SESSION['success_message'] = 'Championship updated successfully!';
+                    } else {
+                        $_SESSION['error_message'] = 'Error updating championship.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Please provide valid data.';
+                }
+                header('Location: ?page=admin&tab=championships');
+                exit;
+                break;
+                
+            case 'delete_championship':
+                requireAdmin();
+                $id = filter_var($_POST['id'] ?? '', FILTER_VALIDATE_INT);
+                
+                if ($id) {
+                    $stmt = $db->prepare('DELETE FROM championships WHERE id = ?');
+                    $stmt->bindValue(1, $id);
+                    if ($stmt->execute()) {
+                        $_SESSION['success_message'] = 'Championship deleted successfully!';
+                    } else {
+                        $_SESSION['error_message'] = 'Error deleting championship.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Invalid championship ID.';
+                }
+                header('Location: ?page=admin&tab=championships');
+                exit;
+                break;
+                
+            // Award CRUD operations
+            case 'add_award':
+                requireAdmin();
+                $year = filter_var($_POST['year'] ?? '', FILTER_VALIDATE_INT);
+                $award_name = trim($_POST['award_name'] ?? '');
+                $player_name = trim($_POST['player_name'] ?? '');
+                
+                if ($year && $award_name && $player_name && $year >= 1900 && $year <= 2100) {
+                    $stmt = $db->prepare('INSERT INTO awards (year, award_name, player_name) VALUES (?, ?, ?)');
+                    $stmt->bindValue(1, $year);
+                    $stmt->bindValue(2, $award_name);
+                    $stmt->bindValue(3, $player_name);
+                    if ($stmt->execute()) {
+                        $_SESSION['success_message'] = 'Award added successfully!';
+                    } else {
+                        $_SESSION['error_message'] = 'Error adding award.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Please provide valid year, award name, and player name.';
+                }
+                header('Location: ?page=admin&tab=awards');
+                exit;
+                break;
+                
+            case 'edit_award':
+                requireAdmin();
+                $id = filter_var($_POST['id'] ?? '', FILTER_VALIDATE_INT);
+                $year = filter_var($_POST['year'] ?? '', FILTER_VALIDATE_INT);
+                $award_name = trim($_POST['award_name'] ?? '');
+                $player_name = trim($_POST['player_name'] ?? '');
+                
+                if ($id && $year && $award_name && $player_name && $year >= 1900 && $year <= 2100) {
+                    $stmt = $db->prepare('UPDATE awards SET year = ?, award_name = ?, player_name = ? WHERE id = ?');
+                    $stmt->bindValue(1, $year);
+                    $stmt->bindValue(2, $award_name);
+                    $stmt->bindValue(3, $player_name);
+                    $stmt->bindValue(4, $id);
+                    if ($stmt->execute()) {
+                        $_SESSION['success_message'] = 'Award updated successfully!';
+                    } else {
+                        $_SESSION['error_message'] = 'Error updating award.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Please provide valid data.';
+                }
+                header('Location: ?page=admin&tab=awards');
+                exit;
+                break;
+                
+            case 'delete_award':
+                requireAdmin();
+                $id = filter_var($_POST['id'] ?? '', FILTER_VALIDATE_INT);
+                
+                if ($id) {
+                    $stmt = $db->prepare('DELETE FROM awards WHERE id = ?');
+                    $stmt->bindValue(1, $id);
+                    if ($stmt->execute()) {
+                        $_SESSION['success_message'] = 'Award deleted successfully!';
+                    } else {
+                        $_SESSION['error_message'] = 'Error deleting award.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Invalid award ID.';
+                }
+                header('Location: ?page=admin&tab=awards');
+                exit;
+                break;
+                
+            // Record CRUD operations
+            case 'add_record':
+                requireAdmin();
+                $year = filter_var($_POST['year'] ?? '', FILTER_VALIDATE_INT);
+                $record_name = trim($_POST['record_name'] ?? '');
+                $record_value = trim($_POST['record_value'] ?? '');
+                $player_name = trim($_POST['player_name'] ?? '');
+                
+                if ($year && $record_name && $record_value && $year >= 1900 && $year <= 2100) {
+                    $stmt = $db->prepare('INSERT INTO records (year, record_name, record_value, player_name) VALUES (?, ?, ?, ?)');
+                    $stmt->bindValue(1, $year);
+                    $stmt->bindValue(2, $record_name);
+                    $stmt->bindValue(3, $record_value);
+                    $stmt->bindValue(4, $player_name ?: null);
+                    if ($stmt->execute()) {
+                        $_SESSION['success_message'] = 'Record added successfully!';
+                    } else {
+                        $_SESSION['error_message'] = 'Error adding record.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Please provide valid year, record name, and record value.';
+                }
+                header('Location: ?page=admin&tab=records');
+                exit;
+                break;
+                
+            case 'edit_record':
+                requireAdmin();
+                $id = filter_var($_POST['id'] ?? '', FILTER_VALIDATE_INT);
+                $year = filter_var($_POST['year'] ?? '', FILTER_VALIDATE_INT);
+                $record_name = trim($_POST['record_name'] ?? '');
+                $record_value = trim($_POST['record_value'] ?? '');
+                $player_name = trim($_POST['player_name'] ?? '');
+                
+                if ($id && $year && $record_name && $record_value && $year >= 1900 && $year <= 2100) {
+                    $stmt = $db->prepare('UPDATE records SET year = ?, record_name = ?, record_value = ?, player_name = ? WHERE id = ?');
+                    $stmt->bindValue(1, $year);
+                    $stmt->bindValue(2, $record_name);
+                    $stmt->bindValue(3, $record_value);
+                    $stmt->bindValue(4, $player_name ?: null);
+                    $stmt->bindValue(5, $id);
+                    if ($stmt->execute()) {
+                        $_SESSION['success_message'] = 'Record updated successfully!';
+                    } else {
+                        $_SESSION['error_message'] = 'Error updating record.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Please provide valid data.';
+                }
+                header('Location: ?page=admin&tab=records');
+                exit;
+                break;
+                
+            case 'delete_record':
+                requireAdmin();
+                $id = filter_var($_POST['id'] ?? '', FILTER_VALIDATE_INT);
+                
+                if ($id) {
+                    $stmt = $db->prepare('DELETE FROM records WHERE id = ?');
+                    $stmt->bindValue(1, $id);
+                    if ($stmt->execute()) {
+                        $_SESSION['success_message'] = 'Record deleted successfully!';
+                    } else {
+                        $_SESSION['error_message'] = 'Error deleting record.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Invalid record ID.';
+                }
+                header('Location: ?page=admin&tab=records');
+                exit;
+                break;
         }
     }
 }
@@ -250,16 +454,27 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
             color: var(--pure-white);
             font-weight: bold;
             text-transform: uppercase;
-            background: linear-gradient(180deg, #555 0%, #333 100%);
-            border: 2px solid var(--metallic-silver);
+            background: linear-gradient(180deg, var(--metallic-silver) 0%, #999 50%, #777 100%);
+            border: 2px solid var(--pure-white);
             border-radius: 8px 8px 0 0;
             transition: all 0.3s ease;
+            box-shadow: 
+                0 4px 8px rgba(0,0,0,0.3),
+                inset 0 1px 0 rgba(255,255,255,0.3),
+                inset 0 -1px 0 rgba(0,0,0,0.3);
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+            position: relative;
         }
 
         .nav-link:hover, .nav-link.active {
-            background: linear-gradient(180deg, var(--bright-orange) 0%, #cc5500 100%);
+            background: linear-gradient(180deg, var(--bright-orange) 0%, #cc5500 50%, #aa4400 100%);
             border-color: var(--gold-accent);
-            transform: translateY(-2px);
+            transform: translateY(-3px);
+            box-shadow: 
+                0 6px 12px rgba(0,0,0,0.4),
+                inset 0 1px 0 rgba(255,255,255,0.4),
+                inset 0 -1px 0 rgba(0,0,0,0.4),
+                0 0 15px rgba(255,102,0,0.3);
         }
 
         /* Main Content */
@@ -274,7 +489,23 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
             border-radius: 8px;
             padding: 30px;
             margin-bottom: 30px;
-            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+            box-shadow: 
+                0 8px 16px rgba(0,0,0,0.4),
+                inset 0 1px 0 rgba(255,255,255,0.1),
+                inset 0 -1px 0 rgba(0,0,0,0.3),
+                0 0 30px rgba(192,192,192,0.1);
+            position: relative;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, var(--metallic-silver) 50%, transparent 100%);
+            opacity: 0.5;
         }
 
         .card-title {
@@ -313,9 +544,23 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
         }
 
         .btn-secondary {
-            background: linear-gradient(180deg, var(--metallic-silver) 0%, #999 100%);
+            background: linear-gradient(180deg, var(--metallic-silver) 0%, #999 50%, #777 100%);
             color: var(--dark-gray);
             border: 2px solid var(--pure-white);
+            box-shadow: 
+                0 4px 8px rgba(0,0,0,0.3),
+                inset 0 1px 0 rgba(255,255,255,0.4),
+                inset 0 -1px 0 rgba(0,0,0,0.3);
+            text-shadow: 1px 1px 2px rgba(255,255,255,0.3);
+        }
+
+        .btn-secondary:hover {
+            background: linear-gradient(180deg, #d4d4d4 0%, var(--metallic-silver) 50%, #999 100%);
+            transform: translateY(-2px);
+            box-shadow: 
+                0 6px 12px rgba(0,0,0,0.4),
+                inset 0 1px 0 rgba(255,255,255,0.5),
+                inset 0 -1px 0 rgba(0,0,0,0.4);
         }
 
         /* Forms */
@@ -421,13 +666,121 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
             border-radius: 6px;
             margin-bottom: 20px;
         }
+
+        /* Tab interface for admin */
+        .tab-container {
+            margin-bottom: 30px;
+        }
+
+        .tab-nav {
+            display: flex;
+            border-bottom: 3px solid var(--bright-orange);
+            margin-bottom: 30px;
+        }
+
+        .tab-button {
+            background: linear-gradient(180deg, var(--dark-gray) 0%, #1a1a1a 100%);
+            border: 2px solid var(--metallic-silver);
+            border-bottom: none;
+            color: var(--pure-white);
+            padding: 15px 25px;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+            border-radius: 8px 8px 0 0;
+            margin-right: 5px;
+            transition: all 0.3s ease;
+        }
+
+        .tab-button:hover {
+            background: linear-gradient(180deg, #444 0%, #2a2a2a 100%);
+            transform: translateY(-2px);
+        }
+
+        .tab-button.active {
+            background: linear-gradient(180deg, var(--bright-orange) 0%, #cc5500 100%);
+            border-color: var(--gold-accent);
+            color: var(--pure-white);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(255,102,0,0.3);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Admin forms */
+        .admin-form {
+            background: linear-gradient(145deg, #333 0%, #222 100%);
+            border: 2px solid var(--bright-orange);
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 30px;
+        }
+
+        .admin-form h3 {
+            color: var(--gold-accent);
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        /* Admin tables */
+        .admin-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: linear-gradient(145deg, #2a2a2a 0%, #1a1a1a 100%);
+            border: 2px solid var(--metallic-silver);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .admin-table th {
+            background: linear-gradient(180deg, var(--bright-orange) 0%, #cc5500 100%);
+            color: var(--pure-white);
+            padding: 15px;
+            text-align: left;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .admin-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid var(--metallic-silver);
+            color: var(--pure-white);
+        }
+
+        .admin-table tr:hover {
+            background: rgba(255,102,0,0.1);
+        }
+
+        .admin-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 0.8rem;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
     <header class="header">
         <div class="container">
             <div class="header-content">
-                <div class="logo">TURKEY BOWL</div>
+                <div class="logo">EG TURKEY BOWL</div>
                 <?php if (isLoggedIn()): ?>
                     <form method="POST" style="display: inline;">
                         <input type="hidden" name="action" value="logout">
@@ -478,10 +831,10 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
             switch ($page) {
                 case 'home':
                     echo '<div class="card">
-                        <h1 class="card-title">Welcome to Turkey Bowl 2024</h1>
+                        <h1 class="card-title">Welcome to Turkey Bowl 2025</h1>
                         <p>The annual flag football championship returns! Get ready for another legendary battle on the gridiron.</p>
                         
-                        <div class="card" style="background: linear-gradient(145deg, var(--dark-gray) 0%, #0f1419 100%); border-color: var(--bright-orange);">
+                        <div class="card" style="background: linear-gradient(145deg, var(--dark-gray) 0%, #0f1419 100%); border-color: var(--bright-orange); margin-top: 40px;">
                             <h2 style="color: var(--gold-accent); margin-bottom: 20px;">Event Information</h2>
                             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
                                 <div>
@@ -808,6 +1161,221 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                     </div>';
                     break;
                     
+                case 'admin':
+                    requireAdmin();
+                    
+                    // Get current tab
+                    $currentTab = $_GET['tab'] ?? 'championships';
+                    
+                    // Display success/error messages
+                    if (isset($_SESSION['success_message'])) {
+                        echo '<div class="success-message">' . htmlspecialchars($_SESSION['success_message']) . '</div>';
+                        unset($_SESSION['success_message']);
+                    }
+                    if (isset($_SESSION['error_message'])) {
+                        echo '<div class="error-message">' . htmlspecialchars($_SESSION['error_message']) . '</div>';
+                        unset($_SESSION['error_message']);
+                    }
+                    
+                    echo '<div class="card">
+                        <h1 class="card-title">Hall of Fame Management</h1>
+                        <p>Manage championships, awards, and records for the Turkey Bowl Hall of Fame.</p>
+                    </div>';
+                    
+                    // Tab navigation
+                    echo '<div class="tab-container">
+                        <div class="tab-nav">
+                            <button class="tab-button ' . ($currentTab === 'championships' ? 'active' : '') . '" onclick="switchTab(\'championships\')">Championships</button>
+                            <button class="tab-button ' . ($currentTab === 'awards' ? 'active' : '') . '" onclick="switchTab(\'awards\')">Awards</button>
+                            <button class="tab-button ' . ($currentTab === 'records' ? 'active' : '') . '" onclick="switchTab(\'records\')">Records</button>
+                        </div>';
+                    
+                    // Championships Tab
+                    echo '<div id="championships" class="tab-content ' . ($currentTab === 'championships' ? 'active' : '') . '">
+                        <div class="admin-form">
+                            <h3>Add New Championship</h3>
+                            <form method="POST">
+                                <input type="hidden" name="action" value="add_championship">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label class="form-label">Year:</label>
+                                        <input type="number" name="year" class="form-input" min="1900" max="2100" value="' . date('Y') . '" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Team Name:</label>
+                                        <input type="text" name="team_name" class="form-input" maxlength="100" required>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary">Add Championship</button>
+                            </form>
+                        </div>
+                        
+                        <div class="card">
+                            <h3 style="color: var(--gold-accent); margin-bottom: 20px;">Existing Championships</h3>
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Year</th>
+                                        <th>Team Name</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>';
+                    
+                    $championships = $db->query('SELECT * FROM championships ORDER BY year DESC');
+                    $hasChampionships = false;
+                    while ($championship = $championships->fetchArray(SQLITE3_ASSOC)) {
+                        $hasChampionships = true;
+                        echo '<tr>
+                                <td>' . $championship['year'] . '</td>
+                                <td>' . htmlspecialchars($championship['team_name']) . '</td>
+                                <td class="admin-actions">
+                                    <button onclick="editChampionship(' . $championship['id'] . ', ' . $championship['year'] . ', \'' . addslashes(htmlspecialchars($championship['team_name'])) . '\')" class="btn btn-secondary btn-small">Edit</button>
+                                    <button onclick="deleteChampionship(' . $championship['id'] . ', \'' . addslashes(htmlspecialchars($championship['team_name'])) . '\')" class="btn btn-secondary btn-small" style="background: var(--alert-red);">Delete</button>
+                                </td>
+                              </tr>';
+                    }
+                    
+                    if (!$hasChampionships) {
+                        echo '<tr><td colspan="3" style="text-align: center; color: var(--metallic-silver);">No championships recorded yet.</td></tr>';
+                    }
+                    
+                    echo '      </tbody>
+                            </table>
+                        </div>
+                    </div>';
+                    
+                    // Awards Tab
+                    echo '<div id="awards" class="tab-content ' . ($currentTab === 'awards' ? 'active' : '') . '">
+                        <div class="admin-form">
+                            <h3>Add New Award</h3>
+                            <form method="POST">
+                                <input type="hidden" name="action" value="add_award">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label class="form-label">Year:</label>
+                                        <input type="number" name="year" class="form-input" min="1900" max="2100" value="' . date('Y') . '" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Award Name:</label>
+                                        <input type="text" name="award_name" class="form-input" maxlength="100" placeholder="e.g., MVP, Most Touchdowns" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Player Name:</label>
+                                        <input type="text" name="player_name" class="form-input" maxlength="100" required>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary">Add Award</button>
+                            </form>
+                        </div>
+                        
+                        <div class="card">
+                            <h3 style="color: var(--gold-accent); margin-bottom: 20px;">Existing Awards</h3>
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Year</th>
+                                        <th>Award</th>
+                                        <th>Winner</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>';
+                    
+                    $awards = $db->query('SELECT * FROM awards ORDER BY year DESC, award_name');
+                    $hasAwards = false;
+                    while ($award = $awards->fetchArray(SQLITE3_ASSOC)) {
+                        $hasAwards = true;
+                        echo '<tr>
+                                <td>' . $award['year'] . '</td>
+                                <td>' . htmlspecialchars($award['award_name']) . '</td>
+                                <td>' . htmlspecialchars($award['player_name']) . '</td>
+                                <td class="admin-actions">
+                                    <button onclick="editAward(' . $award['id'] . ', ' . $award['year'] . ', \'' . addslashes(htmlspecialchars($award['award_name'])) . '\', \'' . addslashes(htmlspecialchars($award['player_name'])) . '\')" class="btn btn-secondary btn-small">Edit</button>
+                                    <button onclick="deleteAward(' . $award['id'] . ', \'' . addslashes(htmlspecialchars($award['award_name'])) . '\')" class="btn btn-secondary btn-small" style="background: var(--alert-red);">Delete</button>
+                                </td>
+                              </tr>';
+                    }
+                    
+                    if (!$hasAwards) {
+                        echo '<tr><td colspan="4" style="text-align: center; color: var(--metallic-silver);">No awards recorded yet.</td></tr>';
+                    }
+                    
+                    echo '      </tbody>
+                            </table>
+                        </div>
+                    </div>';
+                    
+                    // Records Tab
+                    echo '<div id="records" class="tab-content ' . ($currentTab === 'records' ? 'active' : '') . '">
+                        <div class="admin-form">
+                            <h3>Add New Record</h3>
+                            <form method="POST">
+                                <input type="hidden" name="action" value="add_record">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label class="form-label">Year:</label>
+                                        <input type="number" name="year" class="form-input" min="1900" max="2100" value="' . date('Y') . '" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Record Name:</label>
+                                        <input type="text" name="record_name" class="form-input" maxlength="100" placeholder="e.g., Most Interceptions, Longest Pass" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Record Value:</label>
+                                        <input type="text" name="record_value" class="form-input" maxlength="50" placeholder="e.g., 5, 45 yards" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Player Name (Optional):</label>
+                                        <input type="text" name="player_name" class="form-input" maxlength="100">
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary">Add Record</button>
+                            </form>
+                        </div>
+                        
+                        <div class="card">
+                            <h3 style="color: var(--gold-accent); margin-bottom: 20px;">Existing Records</h3>
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Year</th>
+                                        <th>Record</th>
+                                        <th>Value</th>
+                                        <th>Player</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>';
+                    
+                    $records = $db->query('SELECT * FROM records ORDER BY year DESC, record_name');
+                    $hasRecords = false;
+                    while ($record = $records->fetchArray(SQLITE3_ASSOC)) {
+                        $hasRecords = true;
+                        echo '<tr>
+                                <td>' . $record['year'] . '</td>
+                                <td>' . htmlspecialchars($record['record_name']) . '</td>
+                                <td>' . htmlspecialchars($record['record_value']) . '</td>
+                                <td>' . htmlspecialchars($record['player_name'] ?: 'N/A') . '</td>
+                                <td class="admin-actions">
+                                    <button onclick="editRecord(' . $record['id'] . ', ' . $record['year'] . ', \'' . addslashes(htmlspecialchars($record['record_name'])) . '\', \'' . addslashes(htmlspecialchars($record['record_value'])) . '\', \'' . addslashes(htmlspecialchars($record['player_name'] ?: '')) . '\')" class="btn btn-secondary btn-small">Edit</button>
+                                    <button onclick="deleteRecord(' . $record['id'] . ', \'' . addslashes(htmlspecialchars($record['record_name'])) . '\')" class="btn btn-secondary btn-small" style="background: var(--alert-red);">Delete</button>
+                                </td>
+                              </tr>';
+                    }
+                    
+                    if (!$hasRecords) {
+                        echo '<tr><td colspan="5" style="text-align: center; color: var(--metallic-silver);">No records recorded yet.</td></tr>';
+                    }
+                    
+                    echo '      </tbody>
+                            </table>
+                        </div>
+                    </div>';
+                    
+                    echo '</div>'; // Close tab-container
+                    break;
+                    
                 default:
                     echo '<div class="card">
                         <h1 class="card-title">Page Coming Soon</h1>
@@ -836,7 +1404,7 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                 document.getElementById('minutes').textContent = minutes;
                 document.getElementById('seconds').textContent = seconds;
             } else {
-                document.getElementById('countdown-container').innerHTML = '<h2 style="color: var(--gold-accent); text-align: center;">GAME DAY!</h2>';
+                document.getElementById('countdown-container').innerHTML = '<h1 style="color: var(--gold-accent); text-align: center; font-size: 4rem; font-family: \'Arial Black\', Arial, sans-serif; text-shadow: 3px 3px 6px rgba(0,0,0,0.8), 0 0 20px rgba(255,215,0,0.5); margin: 40px 0; animation: pulse 2s infinite;">GAME DAY!</h1><style>@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }</style>';
             }
         }
 
@@ -844,6 +1412,130 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
         if (document.getElementById('countdown-container')) {
             updateCountdown();
             setInterval(updateCountdown, 1000);
+        }
+
+        // Admin functionality
+        function switchTab(tabName) {
+            // Hide all tabs
+            const tabs = document.querySelectorAll('.tab-content');
+            tabs.forEach(tab => tab.classList.remove('active'));
+            
+            // Remove active class from all buttons
+            const buttons = document.querySelectorAll('.tab-button');
+            buttons.forEach(button => button.classList.remove('active'));
+            
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            
+            // Activate selected button
+            event.target.classList.add('active');
+            
+            // Update URL without page reload
+            const url = new URL(window.location);
+            url.searchParams.set('tab', tabName);
+            window.history.replaceState({}, '', url);
+        }
+
+        // Championship functions
+        function editChampionship(id, year, teamName) {
+            const newTeamName = prompt('Edit team name:', teamName);
+            const newYear = prompt('Edit year:', year);
+            
+            if (newTeamName && newYear && newYear >= 1900 && newYear <= 2100) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.innerHTML = `
+                    <input type="hidden" name="action" value="edit_championship">
+                    <input type="hidden" name="id" value="${id}">
+                    <input type="hidden" name="year" value="${newYear}">
+                    <input type="hidden" name="team_name" value="${newTeamName}">
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+
+        function deleteChampionship(id, teamName) {
+            if (confirm(`Are you sure you want to delete the championship for "${teamName}"?\\n\\nThis action cannot be undone.`)) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.innerHTML = `
+                    <input type="hidden" name="action" value="delete_championship">
+                    <input type="hidden" name="id" value="${id}">
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+
+        // Award functions
+        function editAward(id, year, awardName, playerName) {
+            const newAwardName = prompt('Edit award name:', awardName);
+            const newPlayerName = prompt('Edit player name:', playerName);
+            const newYear = prompt('Edit year:', year);
+            
+            if (newAwardName && newPlayerName && newYear && newYear >= 1900 && newYear <= 2100) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.innerHTML = `
+                    <input type="hidden" name="action" value="edit_award">
+                    <input type="hidden" name="id" value="${id}">
+                    <input type="hidden" name="year" value="${newYear}">
+                    <input type="hidden" name="award_name" value="${newAwardName}">
+                    <input type="hidden" name="player_name" value="${newPlayerName}">
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+
+        function deleteAward(id, awardName) {
+            if (confirm(`Are you sure you want to delete the award "${awardName}"?\\n\\nThis action cannot be undone.`)) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.innerHTML = `
+                    <input type="hidden" name="action" value="delete_award">
+                    <input type="hidden" name="id" value="${id}">
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+
+        // Record functions
+        function editRecord(id, year, recordName, recordValue, playerName) {
+            const newRecordName = prompt('Edit record name:', recordName);
+            const newRecordValue = prompt('Edit record value:', recordValue);
+            const newPlayerName = prompt('Edit player name (optional):', playerName);
+            const newYear = prompt('Edit year:', year);
+            
+            if (newRecordName && newRecordValue && newYear && newYear >= 1900 && newYear <= 2100) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.innerHTML = `
+                    <input type="hidden" name="action" value="edit_record">
+                    <input type="hidden" name="id" value="${id}">
+                    <input type="hidden" name="year" value="${newYear}">
+                    <input type="hidden" name="record_name" value="${newRecordName}">
+                    <input type="hidden" name="record_value" value="${newRecordValue}">
+                    <input type="hidden" name="player_name" value="${newPlayerName || ''}">
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+
+        function deleteRecord(id, recordName) {
+            if (confirm(`Are you sure you want to delete the record "${recordName}"?\\n\\nThis action cannot be undone.`)) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.innerHTML = `
+                    <input type="hidden" name="action" value="delete_record">
+                    <input type="hidden" name="id" value="${id}">
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
         }
     </script>
 </body>
