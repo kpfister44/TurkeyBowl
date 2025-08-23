@@ -100,13 +100,19 @@ function initDatabase() {
     $defaultAdmin->bindValue(2, password_hash('admin123', PASSWORD_DEFAULT));
     $defaultAdmin->execute();
     
-    // Insert default event settings
-    $defaultSettings = $db->prepare('INSERT OR IGNORE INTO event_settings (event_date, event_location, registration_deadline, draft_date) VALUES (?, ?, ?, ?)');
-    $defaultSettings->bindValue(1, '2024-11-28 10:00:00');
-    $defaultSettings->bindValue(2, 'Central Park Field #3');
-    $defaultSettings->bindValue(3, '2024-11-20 23:59:59');
-    $defaultSettings->bindValue(4, '2024-11-25 19:00:00');
-    $defaultSettings->execute();
+    // Insert default event settings only if none exist
+    $checkSettings = $db->query('SELECT COUNT(*) as count FROM event_settings');
+    $settingsCount = $checkSettings->fetchArray(SQLITE3_ASSOC);
+    
+    if ($settingsCount['count'] == 0) {
+        $defaultSettings = $db->prepare('INSERT INTO event_settings (event_date, event_location, registration_deadline, draft_date, current_year) VALUES (?, ?, ?, ?, ?)');
+        $defaultSettings->bindValue(1, '2024-11-28 10:00:00');
+        $defaultSettings->bindValue(2, 'Central Park Field #3');
+        $defaultSettings->bindValue(3, '2024-11-20 23:59:59');
+        $defaultSettings->bindValue(4, '2024-11-25 19:00:00');
+        $defaultSettings->bindValue(5, 2024);
+        $defaultSettings->execute();
+    }
     
     return $db;
 }
@@ -286,6 +292,224 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
                 break;
                 
+            // Event settings update
+            case 'update_event_settings':
+                requireAdmin();
+                $event_date = $_POST['event_date'] ?? '';
+                $event_location = trim($_POST['event_location'] ?? '');
+                $registration_deadline = $_POST['registration_deadline'] ?? '';
+                $draft_date = $_POST['draft_date'] ?? '';
+                $current_year = filter_var($_POST['current_year'] ?? '', FILTER_VALIDATE_INT);
+                
+                if ($event_date && $event_location && $registration_deadline && $draft_date && $current_year) {
+                    // Convert datetime-local format to SQLite format
+                    $event_date_formatted = date('Y-m-d H:i:s', strtotime($event_date));
+                    $registration_deadline_formatted = date('Y-m-d H:i:s', strtotime($registration_deadline));
+                    $draft_date_formatted = date('Y-m-d H:i:s', strtotime($draft_date));
+                    
+                    // Validate dates
+                    $eventDateTime = strtotime($event_date);
+                    $regDateTime = strtotime($registration_deadline);
+                    $draftDateTime = strtotime($draft_date);
+                    
+                    if ($eventDateTime && $regDateTime && $draftDateTime && $current_year >= 2020 && $current_year <= 2030) {
+                        // Clean up any duplicate records - keep only the most recent one
+                        $cleanupStmt = $db->prepare('DELETE FROM event_settings WHERE id NOT IN (SELECT MAX(id) FROM event_settings)');
+                        $cleanupStmt->execute();
+                        
+                        // Get the single remaining record
+                        $checkStmt = $db->query('SELECT * FROM event_settings LIMIT 1');
+                        $existingRecord = $checkStmt->fetchArray(SQLITE3_ASSOC);
+                        
+                        if ($existingRecord) {
+                            // Update the existing record
+                            $stmt = $db->prepare('UPDATE event_settings SET event_date = ?, event_location = ?, registration_deadline = ?, draft_date = ?, current_year = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+                            $stmt->bindValue(1, $event_date_formatted);
+                            $stmt->bindValue(2, $event_location);
+                            $stmt->bindValue(3, $registration_deadline_formatted);
+                            $stmt->bindValue(4, $draft_date_formatted);
+                            $stmt->bindValue(5, $current_year);
+                            $stmt->bindValue(6, $existingRecord['id']);
+                        } else {
+                            // Insert new record
+                            $stmt = $db->prepare('INSERT INTO event_settings (event_date, event_location, registration_deadline, draft_date, current_year) VALUES (?, ?, ?, ?, ?)');
+                            $stmt->bindValue(1, $event_date_formatted);
+                            $stmt->bindValue(2, $event_location);
+                            $stmt->bindValue(3, $registration_deadline_formatted);
+                            $stmt->bindValue(4, $draft_date_formatted);
+                            $stmt->bindValue(5, $current_year);
+                        }
+                        
+                        if ($stmt->execute()) {
+                            $_SESSION['success_message'] = 'Event settings updated successfully!';
+                        } else {
+                            $_SESSION['error_message'] = 'Error updating event settings: ' . $db->lastErrorMsg();
+                        }
+                    } else {
+                        $_SESSION['error_message'] = 'Please provide valid dates and year.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Please fill in all required fields.';
+                }
+                header('Location: ?page=admin&tab=event');
+                exit;
+                break;
+                
+            // Player CRUD operations
+            case 'add_player':
+                requireAdmin();
+                $name = trim($_POST['name'] ?? '');
+                $nickname = trim($_POST['nickname'] ?? '');
+                $position = trim($_POST['position'] ?? '');
+                $bio = trim($_POST['bio'] ?? '');
+                $years_played = filter_var($_POST['years_played'] ?? 1, FILTER_VALIDATE_INT);
+                $current_year = isset($_POST['current_year']) ? 1 : 0;
+                
+                // Handle photo upload
+                $photo_path = null;
+                if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
+                    $uploadDir = 'uploads/';
+                    if (!is_dir($uploadDir)) {
+                        mkdir($uploadDir, 0755, true);
+                    }
+                    
+                    $fileExtension = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
+                    if (in_array($fileExtension, ['jpg', 'jpeg', 'png'])) {
+                        $fileName = uniqid() . '_' . preg_replace('/[^a-zA-Z0-9_.-]/', '', $_FILES['photo']['name']);
+                        $photo_path = $uploadDir . $fileName;
+                        
+                        if (!move_uploaded_file($_FILES['photo']['tmp_name'], $photo_path)) {
+                            $_SESSION['error_message'] = 'Error uploading photo.';
+                            header('Location: ?page=admin&tab=players');
+                            exit;
+                        }
+                    } else {
+                        $_SESSION['error_message'] = 'Photo must be PNG or JPEG format.';
+                        header('Location: ?page=admin&tab=players');
+                        exit;
+                    }
+                }
+                
+                if ($name && $years_played && $years_played > 0 && $years_played <= 20) {
+                    $stmt = $db->prepare('INSERT INTO players (name, nickname, position, bio, photo_path, years_played, current_year) VALUES (?, ?, ?, ?, ?, ?, ?)');
+                    $stmt->bindValue(1, $name);
+                    $stmt->bindValue(2, $nickname ?: null);
+                    $stmt->bindValue(3, $position ?: null);
+                    $stmt->bindValue(4, $bio ?: null);
+                    $stmt->bindValue(5, $photo_path);
+                    $stmt->bindValue(6, $years_played);
+                    $stmt->bindValue(7, $current_year);
+                    if ($stmt->execute()) {
+                        $_SESSION['success_message'] = 'Player added successfully!';
+                    } else {
+                        $_SESSION['error_message'] = 'Error adding player.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Please provide valid player name and years played (1-20).';
+                }
+                header('Location: ?page=admin&tab=players');
+                exit;
+                break;
+                
+            case 'edit_player':
+                requireAdmin();
+                $id = filter_var($_POST['id'] ?? '', FILTER_VALIDATE_INT);
+                $name = trim($_POST['name'] ?? '');
+                $nickname = trim($_POST['nickname'] ?? '');
+                $position = trim($_POST['position'] ?? '');
+                $bio = trim($_POST['bio'] ?? '');
+                $years_played = filter_var($_POST['years_played'] ?? 1, FILTER_VALIDATE_INT);
+                $current_year = isset($_POST['current_year']) ? 1 : 0;
+                
+                if ($id && $name && $years_played && $years_played > 0 && $years_played <= 20) {
+                    // Get current player for photo cleanup
+                    $currentPlayer = $db->prepare('SELECT photo_path FROM players WHERE id = ?');
+                    $currentPlayer->bindValue(1, $id);
+                    $currentPlayerResult = $currentPlayer->execute();
+                    $currentPlayerData = $currentPlayerResult->fetchArray(SQLITE3_ASSOC);
+                    
+                    $photo_path = $currentPlayerData['photo_path'] ?? null;
+                    
+                    // Handle new photo upload
+                    if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
+                        $uploadDir = 'uploads/';
+                        if (!is_dir($uploadDir)) {
+                            mkdir($uploadDir, 0755, true);
+                        }
+                        
+                        $fileExtension = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
+                        if (in_array($fileExtension, ['jpg', 'jpeg', 'png'])) {
+                            $fileName = uniqid() . '_' . preg_replace('/[^a-zA-Z0-9_.-]/', '', $_FILES['photo']['name']);
+                            $new_photo_path = $uploadDir . $fileName;
+                            
+                            if (move_uploaded_file($_FILES['photo']['tmp_name'], $new_photo_path)) {
+                                // Delete old photo if exists
+                                if ($photo_path && file_exists($photo_path)) {
+                                    unlink($photo_path);
+                                }
+                                $photo_path = $new_photo_path;
+                            } else {
+                                $_SESSION['error_message'] = 'Error uploading new photo.';
+                                header('Location: ?page=admin&tab=players');
+                                exit;
+                            }
+                        } else {
+                            $_SESSION['error_message'] = 'Photo must be PNG or JPEG format.';
+                            header('Location: ?page=admin&tab=players');
+                            exit;
+                        }
+                    }
+                    
+                    $stmt = $db->prepare('UPDATE players SET name = ?, nickname = ?, position = ?, bio = ?, photo_path = ?, years_played = ?, current_year = ? WHERE id = ?');
+                    $stmt->bindValue(1, $name);
+                    $stmt->bindValue(2, $nickname ?: null);
+                    $stmt->bindValue(3, $position ?: null);
+                    $stmt->bindValue(4, $bio ?: null);
+                    $stmt->bindValue(5, $photo_path);
+                    $stmt->bindValue(6, $years_played);
+                    $stmt->bindValue(7, $current_year);
+                    $stmt->bindValue(8, $id);
+                    if ($stmt->execute()) {
+                        $_SESSION['success_message'] = 'Player updated successfully!';
+                    } else {
+                        $_SESSION['error_message'] = 'Error updating player.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Please provide valid player data.';
+                }
+                header('Location: ?page=admin&tab=players');
+                exit;
+                break;
+                
+            case 'delete_player':
+                requireAdmin();
+                $id = filter_var($_POST['id'] ?? '', FILTER_VALIDATE_INT);
+                
+                if ($id) {
+                    // Get player photo for cleanup
+                    $playerQuery = $db->prepare('SELECT photo_path FROM players WHERE id = ?');
+                    $playerQuery->bindValue(1, $id);
+                    $playerResult = $playerQuery->execute();
+                    $playerData = $playerResult->fetchArray(SQLITE3_ASSOC);
+                    
+                    $stmt = $db->prepare('DELETE FROM players WHERE id = ?');
+                    $stmt->bindValue(1, $id);
+                    if ($stmt->execute()) {
+                        // Delete photo file if exists
+                        if ($playerData['photo_path'] && file_exists($playerData['photo_path'])) {
+                            unlink($playerData['photo_path']);
+                        }
+                        $_SESSION['success_message'] = 'Player deleted successfully!';
+                    } else {
+                        $_SESSION['error_message'] = 'Error deleting player.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Invalid player ID.';
+                }
+                header('Location: ?page=admin&tab=players');
+                exit;
+                break;
+                
             // Record CRUD operations
             case 'add_record':
                 requireAdmin();
@@ -364,7 +588,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Get current page
 $page = $_GET['page'] ?? 'home';
 
-// Get event settings
+// Get event settings (after POST processing to get fresh data)
 $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT 1')->fetchArray(SQLITE3_ASSOC);
 ?>
 
@@ -1165,7 +1389,7 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                     requireAdmin();
                     
                     // Get current tab
-                    $currentTab = $_GET['tab'] ?? 'championships';
+                    $currentTab = $_GET['tab'] ?? 'event';
                     
                     // Display success/error messages
                     if (isset($_SESSION['success_message'])) {
@@ -1178,17 +1402,157 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                     }
                     
                     echo '<div class="card">
-                        <h1 class="card-title">Hall of Fame Management</h1>
-                        <p>Manage championships, awards, and records for the Turkey Bowl Hall of Fame.</p>
+                        <h1 class="card-title">Admin Dashboard</h1>
+                        <p>Manage all aspects of the Turkey Bowl event including settings, players, and Hall of Fame.</p>
                     </div>';
                     
                     // Tab navigation
                     echo '<div class="tab-container">
                         <div class="tab-nav">
+                            <button class="tab-button ' . ($currentTab === 'event' ? 'active' : '') . '" onclick="switchTab(\'event\')">Event Settings</button>
+                            <button class="tab-button ' . ($currentTab === 'players' ? 'active' : '') . '" onclick="switchTab(\'players\')">Players</button>
                             <button class="tab-button ' . ($currentTab === 'championships' ? 'active' : '') . '" onclick="switchTab(\'championships\')">Championships</button>
                             <button class="tab-button ' . ($currentTab === 'awards' ? 'active' : '') . '" onclick="switchTab(\'awards\')">Awards</button>
                             <button class="tab-button ' . ($currentTab === 'records' ? 'active' : '') . '" onclick="switchTab(\'records\')">Records</button>
                         </div>';
+                    
+                    // Event Settings Tab
+                    echo '<div id="event" class="tab-content ' . ($currentTab === 'event' ? 'active' : '') . '">
+                        <div class="admin-form">
+                            <h3>Event Information</h3>
+                            <form method="POST">
+                                <input type="hidden" name="action" value="update_event_settings">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label class="form-label">Event Date & Time:</label>
+                                        <input type="datetime-local" name="event_date" class="form-input" value="' . date('Y-m-d\\TH:i', strtotime($eventSettings['event_date'])) . '" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Event Location:</label>
+                                        <input type="text" name="event_location" class="form-input" value="' . htmlspecialchars($eventSettings['event_location']) . '" maxlength="200" required>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label class="form-label">Registration Deadline:</label>
+                                        <input type="datetime-local" name="registration_deadline" class="form-input" value="' . date('Y-m-d\\TH:i', strtotime($eventSettings['registration_deadline'])) . '" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Draft Date & Time:</label>
+                                        <input type="datetime-local" name="draft_date" class="form-input" value="' . date('Y-m-d\\TH:i', strtotime($eventSettings['draft_date'])) . '" required>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label class="form-label">Current Year:</label>
+                                        <input type="number" name="current_year" class="form-input" min="2020" max="2030" value="' . ($eventSettings['current_year'] ?? date('Y')) . '" required>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary">Update Event Settings</button>
+                            </form>
+                        </div>
+                    </div>';
+                    
+                    // Players Tab
+                    echo '<div id="players" class="tab-content ' . ($currentTab === 'players' ? 'active' : '') . '">
+                        <div class="admin-form">
+                            <h3>Add New Player</h3>
+                            <form method="POST" enctype="multipart/form-data">
+                                <input type="hidden" name="action" value="add_player">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label class="form-label">Full Name:</label>
+                                        <input type="text" name="name" class="form-input" maxlength="100" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Nickname (Optional):</label>
+                                        <input type="text" name="nickname" class="form-input" maxlength="50">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label class="form-label">Position:</label>
+                                        <input type="text" name="position" class="form-input" maxlength="50" placeholder="QB, RB, WR, etc.">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Years Played:</label>
+                                        <input type="number" name="years_played" class="form-input" min="1" max="20" value="1" required>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label class="form-label">Player Photo (PNG/JPEG):</label>
+                                        <input type="file" name="photo" class="form-input" accept=".png,.jpg,.jpeg">
+                                    </div>
+                                    <div class="form-group" style="display: flex; align-items: end;">
+                                        <label style="display: flex; align-items: center; color: var(--bright-orange); cursor: pointer;">
+                                            <input type="checkbox" name="current_year" checked style="margin-right: 8px;">
+                                            Playing This Year
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Bio/Notes (Optional):</label>
+                                    <textarea name="bio" class="form-input" rows="3" maxlength="500" style="min-height: 80px; resize: vertical;"></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-primary">Add Player</button>
+                            </form>
+                        </div>
+                        
+                        <div class="card">
+                            <h3 style="color: var(--gold-accent); margin-bottom: 20px;">Existing Players</h3>
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Photo</th>
+                                        <th>Name</th>
+                                        <th>Position</th>
+                                        <th>Years</th>
+                                        <th>Active</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>';
+                    
+                    $players = $db->query('SELECT * FROM players ORDER BY name');
+                    $hasPlayers = false;
+                    while ($player = $players->fetchArray(SQLITE3_ASSOC)) {
+                        $hasPlayers = true;
+                        $photoPath = $player['photo_path'] ? htmlspecialchars($player['photo_path']) : null;
+                        echo '<tr>
+                                <td>';
+                        if ($photoPath) {
+                            echo '<div style="width: 40px; height: 40px; border-radius: 50%; overflow: hidden; border: 2px solid var(--bright-orange);">
+                                    <img src="' . $photoPath . '" alt="Photo" style="width: 100%; height: 100%; object-fit: cover;">
+                                  </div>';
+                        } else {
+                            echo '<div style="width: 40px; height: 40px; border-radius: 50%; background: var(--dark-gray); border: 2px solid var(--metallic-silver); display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--metallic-silver);">📷</div>';
+                        }
+                        echo '</td>
+                                <td>
+                                    <strong>' . htmlspecialchars($player['name']) . '</strong>';
+                        if ($player['nickname']) {
+                            echo '<br><small style="color: var(--gold-accent); font-style: italic;">"' . htmlspecialchars($player['nickname']) . '"</small>';
+                        }
+                        echo '</td>
+                                <td>' . htmlspecialchars($player['position'] ?: 'Utility') . '</td>
+                                <td>' . $player['years_played'] . '</td>
+                                <td>' . ($player['current_year'] ? '<span style="color: var(--success-green);">✓ Active</span>' : '<span style="color: var(--metallic-silver);">Inactive</span>') . '</td>
+                                <td class="admin-actions">
+                                    <button onclick="editPlayer(' . $player['id'] . ')" class="btn btn-secondary btn-small">Edit</button>
+                                    <button onclick="deletePlayer(' . $player['id'] . ', \'' . addslashes(htmlspecialchars($player['name'])) . '\')" class="btn btn-secondary btn-small" style="background: var(--alert-red);">Delete</button>
+                                </td>
+                              </tr>';
+                    }
+                    
+                    if (!$hasPlayers) {
+                        echo '<tr><td colspan="6" style="text-align: center; color: var(--metallic-silver);">No players registered yet.</td></tr>';
+                    }
+                    
+                    echo '      </tbody>
+                            </table>
+                        </div>
+                    </div>';
                     
                     // Championships Tab
                     echo '<div id="championships" class="tab-content ' . ($currentTab === 'championships' ? 'active' : '') . '">
@@ -1434,6 +1798,64 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
             const url = new URL(window.location);
             url.searchParams.set('tab', tabName);
             window.history.replaceState({}, '', url);
+        }
+
+        // Player functions
+        function editPlayer(id) {
+            // Create a more sophisticated edit form
+            const playerRow = event.target.closest('tr');
+            const cells = playerRow.querySelectorAll('td');
+            const nameCell = cells[1];
+            const positionCell = cells[2];
+            const yearsCell = cells[3];
+            const activeCell = cells[4];
+            
+            // Extract current values
+            const currentName = nameCell.querySelector('strong').textContent;
+            const nicknameElement = nameCell.querySelector('small');
+            const currentNickname = nicknameElement ? nicknameElement.textContent.replace(/"/g, '') : '';
+            const currentPosition = positionCell.textContent === 'Utility' ? '' : positionCell.textContent;
+            const currentYears = yearsCell.textContent;
+            const isActive = activeCell.textContent.includes('✓ Active');
+            
+            const newName = prompt('Edit player name:', currentName);
+            if (!newName) return;
+            
+            const newNickname = prompt('Edit nickname (optional):', currentNickname);
+            const newPosition = prompt('Edit position:', currentPosition);
+            const newYears = prompt('Edit years played:', currentYears);
+            const newActive = confirm(`Is ${newName} playing this year?\\n\\nClick OK for Yes, Cancel for No.`);
+            
+            if (newName && newYears && parseInt(newYears) >= 1 && parseInt(newYears) <= 20) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.innerHTML = `
+                    <input type="hidden" name="action" value="edit_player">
+                    <input type="hidden" name="id" value="${id}">
+                    <input type="hidden" name="name" value="${newName}">
+                    <input type="hidden" name="nickname" value="${newNickname || ''}">
+                    <input type="hidden" name="position" value="${newPosition || ''}">
+                    <input type="hidden" name="years_played" value="${newYears}">
+                    ${newActive ? '<input type="hidden" name="current_year" value="1">' : ''}
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            } else {
+                alert('Please provide a valid name and years played (1-20).');
+            }
+        }
+        
+        function deletePlayer(id, playerName) {
+            if (confirm(`Are you sure you want to delete player "${playerName}"?\\n\\nThis will also delete their photo and remove them from any teams.\\n\\nThis action cannot be undone.`)) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.innerHTML = `
+                    <input type="hidden" name="action" value="delete_player">
+                    <input type="hidden" name="id" value="${id}">
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
         }
 
         // Championship functions
