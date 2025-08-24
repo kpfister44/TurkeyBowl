@@ -2011,86 +2011,159 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                     break;
                     
                 case 'teams':
-                    // Get current year teams and their players
                     $currentYear = $eventSettings['current_year'] ?? date('Y');
-                    $teams = $db->query("SELECT * FROM teams WHERE year = $currentYear ORDER BY name");
                     
                     echo '<div class="card">
-                        <h1 class="card-title">2024 Team Lineups</h1>
+                        <h1 class="card-title">' . $currentYear . ' Team Lineups</h1>
                         <p>Check out this year\'s team rosters and prepare for battle!</p>
                     </div>';
                     
                     $hasTeams = false;
-                    while ($team = $teams->fetchArray(SQLITE3_ASSOC)) {
-                        $hasTeams = true;
-                        
-                        // Get team players
-                        $teamPlayersQuery = $db->prepare('
-                            SELECT p.* FROM players p 
-                            JOIN team_players tp ON p.id = tp.player_id 
-                            WHERE tp.team_id = ? 
-                            ORDER BY tp.draft_order, p.name
+                    
+                    // First check for completed draft teams
+                    $completedDraft = $db->query('SELECT * FROM draft_sessions WHERE year = ' . $currentYear . ' AND status = "completed" ORDER BY created_at DESC LIMIT 1')->fetchArray(SQLITE3_ASSOC);
+                    
+                    if ($completedDraft) {
+                        // Display draft teams
+                        $draftTeamsQuery = $db->query('
+                            SELECT dt.*, p.name as captain_name, COUNT(dp.id) as player_count
+                            FROM draft_teams dt 
+                            LEFT JOIN players p ON dt.captain_player_id = p.id 
+                            LEFT JOIN draft_picks dp ON dt.id = dp.team_id 
+                            WHERE dt.draft_session_id = ' . $completedDraft['id'] . ' 
+                            GROUP BY dt.id 
+                            ORDER BY dt.draft_order
                         ');
-                        $teamPlayersQuery->bindValue(1, $team['id']);
-                        $teamPlayers = $teamPlayersQuery->execute();
                         
-                        // Get captain info
-                        $captain = null;
-                        if ($team['captain_id']) {
-                            $captainQuery = $db->prepare('SELECT name FROM players WHERE id = ?');
-                            $captainQuery->bindValue(1, $team['captain_id']);
-                            $captainResult = $captainQuery->execute();
-                            $captain = $captainResult->fetchArray(SQLITE3_ASSOC);
-                        }
-                        
-                        echo '<div class="card" style="border: 3px solid var(--bright-orange);">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                                    <h2 style="color: var(--gold-accent); font-size: 2rem; margin: 0;">' . htmlspecialchars($team['name']) . '</h2>';
-                        
-                        if ($team['logo_path']) {
-                            echo '<div style="width: 60px; height: 60px; border-radius: 50%; overflow: hidden; border: 2px solid var(--gold-accent);">
-                                    <img src="' . htmlspecialchars($team['logo_path']) . '" alt="Team Logo" style="width: 100%; height: 100%; object-fit: cover;">
-                                  </div>';
-                        }
-                        
-                        echo '</div>';
-                        
-                        if ($captain) {
-                            echo '<p style="color: var(--bright-orange); margin-bottom: 15px;">
-                                    <strong>Captain:</strong> ' . htmlspecialchars($captain['name']) . '
-                                  </p>';
-                        }
-                        
-                        echo '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">';
-                        
-                        $playerCount = 0;
-                        while ($player = $teamPlayers->fetchArray(SQLITE3_ASSOC)) {
-                            $playerCount++;
-                            $photoPath = $player['photo_path'] ? htmlspecialchars($player['photo_path']) : 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=';
+                        while ($team = $draftTeamsQuery->fetchArray(SQLITE3_ASSOC)) {
+                            $hasTeams = true;
                             
-                            echo '<div style="background: rgba(255,102,0,0.1); border: 1px solid var(--metallic-silver); border-radius: 6px; padding: 15px; text-align: center;">
-                                    <div style="width: 60px; height: 60px; margin: 0 auto 10px; border-radius: 50%; overflow: hidden; border: 2px solid var(--bright-orange);">
-                                        <img src="' . $photoPath . '" alt="' . htmlspecialchars($player['name']) . '" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src=\'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=\'">
-                                    </div>
-                                    <h4 style="color: var(--pure-white); margin: 0 0 5px 0;">' . htmlspecialchars($player['name']) . '</h4>
-                                    <p style="color: var(--metallic-silver); font-size: 0.8rem; margin: 0;">' . htmlspecialchars($player['position'] ?: 'Utility') . '</p>
-                                  </div>';
+                            // Get team players from draft picks
+                            $teamPlayersQuery = $db->query('
+                                SELECT p.* FROM draft_picks dp 
+                                JOIN players p ON dp.player_id = p.id 
+                                WHERE dp.team_id = ' . $team['id'] . ' 
+                                ORDER BY dp.pick_number
+                            ');
+                            
+                            echo '<div class="card" style="border: 3px solid ' . htmlspecialchars($team['team_color']) . ';">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                        <h2 style="color: var(--gold-accent); font-size: 2rem; margin: 0;">' . htmlspecialchars($team['team_name']) . '</h2>
+                                        <div style="background: ' . htmlspecialchars($team['team_color']) . '; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 1.2rem;">
+                                            #' . $team['draft_order'] . '
+                                        </div>
+                                    </div>';
+                            
+                            if ($team['captain_name']) {
+                                echo '<p style="color: var(--bright-orange); margin-bottom: 15px;">
+                                        <strong>Captain:</strong> ' . htmlspecialchars($team['captain_name']) . '
+                                      </p>';
+                            }
+                            
+                            echo '<p style="color: var(--metallic-silver); margin-bottom: 20px;">
+                                    <strong>Players:</strong> ' . $team['player_count'] . '
+                                  </p>';
+                            
+                            echo '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">';
+                            
+                            $playerCount = 0;
+                            while ($player = $teamPlayersQuery->fetchArray(SQLITE3_ASSOC)) {
+                                $playerCount++;
+                                $photoPath = $player['photo_path'] ? htmlspecialchars($player['photo_path']) : 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=';
+                                
+                                echo '<div style="background: rgba(255,102,0,0.1); border: 1px solid ' . htmlspecialchars($team['team_color']) . '; border-radius: 6px; padding: 15px; text-align: center;">
+                                        <div style="width: 60px; height: 60px; margin: 0 auto 10px; border-radius: 50%; overflow: hidden; border: 2px solid ' . htmlspecialchars($team['team_color']) . ';">
+                                            <img src="' . $photoPath . '" alt="' . htmlspecialchars($player['name']) . '" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src=\'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=\'">
+                                        </div>
+                                        <h4 style="color: var(--pure-white); margin: 0 0 5px 0;">' . htmlspecialchars($player['name']) . '</h4>
+                                        <p style="color: var(--metallic-silver); font-size: 0.8rem; margin: 0;">' . htmlspecialchars($player['position'] ?: 'Utility') . '</p>
+                                      </div>';
+                            }
+                            
+                            if ($playerCount === 0) {
+                                echo '<div style="grid-column: 1 / -1; text-align: center; color: var(--metallic-silver); padding: 20px;">
+                                        <p>No players drafted yet.</p>
+                                      </div>';
+                            }
+                            
+                            echo '</div>
+                                </div>';
                         }
+                    } else {
+                        // Fallback to regular teams table if no completed draft
+                        $teams = $db->query("SELECT * FROM teams WHERE year = $currentYear ORDER BY name");
                         
-                        if ($playerCount === 0) {
-                            echo '<div style="grid-column: 1 / -1; text-align: center; color: var(--metallic-silver); padding: 20px;">
-                                    <p>No players drafted yet.</p>
-                                  </div>';
+                        while ($team = $teams->fetchArray(SQLITE3_ASSOC)) {
+                            $hasTeams = true;
+                            
+                            // Get team players
+                            $teamPlayersQuery = $db->prepare('
+                                SELECT p.* FROM players p 
+                                JOIN team_players tp ON p.id = tp.player_id 
+                                WHERE tp.team_id = ? 
+                                ORDER BY tp.draft_order, p.name
+                            ');
+                            $teamPlayersQuery->bindValue(1, $team['id']);
+                            $teamPlayers = $teamPlayersQuery->execute();
+                            
+                            // Get captain info
+                            $captain = null;
+                            if ($team['captain_id']) {
+                                $captainQuery = $db->prepare('SELECT name FROM players WHERE id = ?');
+                                $captainQuery->bindValue(1, $team['captain_id']);
+                                $captainResult = $captainQuery->execute();
+                                $captain = $captainResult->fetchArray(SQLITE3_ASSOC);
+                            }
+                            
+                            echo '<div class="card" style="border: 3px solid var(--bright-orange);">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                        <h2 style="color: var(--gold-accent); font-size: 2rem; margin: 0;">' . htmlspecialchars($team['name']) . '</h2>';
+                            
+                            if ($team['logo_path']) {
+                                echo '<div style="width: 60px; height: 60px; border-radius: 50%; overflow: hidden; border: 2px solid var(--gold-accent);">
+                                        <img src="' . htmlspecialchars($team['logo_path']) . '" alt="Team Logo" style="width: 100%; height: 100%; object-fit: cover;">
+                                      </div>';
+                            }
+                            
+                            echo '</div>';
+                            
+                            if ($captain) {
+                                echo '<p style="color: var(--bright-orange); margin-bottom: 15px;">
+                                        <strong>Captain:</strong> ' . htmlspecialchars($captain['name']) . '
+                                      </p>';
+                            }
+                            
+                            echo '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">';
+                            
+                            $playerCount = 0;
+                            while ($player = $teamPlayers->fetchArray(SQLITE3_ASSOC)) {
+                                $playerCount++;
+                                $photoPath = $player['photo_path'] ? htmlspecialchars($player['photo_path']) : 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=';
+                                
+                                echo '<div style="background: rgba(255,102,0,0.1); border: 1px solid var(--metallic-silver); border-radius: 6px; padding: 15px; text-align: center;">
+                                        <div style="width: 60px; height: 60px; margin: 0 auto 10px; border-radius: 50%; overflow: hidden; border: 2px solid var(--bright-orange);">
+                                            <img src="' . $photoPath . '" alt="' . htmlspecialchars($player['name']) . '" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src=\'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=\'">
+                                        </div>
+                                        <h4 style="color: var(--pure-white); margin: 0 0 5px 0;">' . htmlspecialchars($player['name']) . '</h4>
+                                        <p style="color: var(--metallic-silver); font-size: 0.8rem; margin: 0.">' . htmlspecialchars($player['position'] ?: 'Utility') . '</p>
+                                      </div>';
+                            }
+                            
+                            if ($playerCount === 0) {
+                                echo '<div style="grid-column: 1 / -1; text-align: center; color: var(--metallic-silver); padding: 20px;">
+                                        <p>No players drafted yet.</p>
+                                      </div>';
+                            }
+                            
+                            echo '</div>
+                                </div>';
                         }
-                        
-                        echo '</div>
-                            </div>';
                     }
                     
                     if (!$hasTeams) {
                         echo '<div class="card" style="text-align: center;">
                                 <h2 style="color: var(--metallic-silver);">No Teams Created Yet</h2>
-                                <p>Teams will appear here after the draft begins.</p>
+                                <p>Teams will appear here after the draft is completed.</p>
                               </div>';
                     }
                     break;
