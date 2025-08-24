@@ -769,6 +769,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
                 break;
                 
+            case 'end_draft':
+                requireAdmin();
+                $draft_session_id = filter_var($_POST['draft_session_id'] ?? '', FILTER_VALIDATE_INT);
+                
+                if ($draft_session_id) {
+                    $stmt = $db->prepare('UPDATE draft_sessions SET status = "completed" WHERE id = ? AND status = "active"');
+                    $stmt->bindValue(1, $draft_session_id);
+                    
+                    if ($stmt->execute() && $db->changes() > 0) {
+                        $_SESSION['success_message'] = 'Draft ended successfully! Check the Teams tab to see final rosters.';
+                    } else {
+                        $_SESSION['error_message'] = 'Error ending draft or no active draft found.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Invalid draft session.';
+                }
+                header('Location: ?page=admin&tab=teams');
+                exit;
+                break;
+                
             case 'draft_player':
                 requireAdmin();
                 $player_id = filter_var($_POST['player_id'] ?? '', FILTER_VALIDATE_INT);
@@ -815,30 +835,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $draftStmt->bindValue(5, $pickNumber);
                             
                             if ($draftStmt->execute()) {
-                                // Calculate next team (snake draft logic)
-                                $nextTeamOrder = getNextTeamOrder($draft['num_teams'], $round, ($pickNumber - 1) % $draft['num_teams'] + 1);
+                                // Check if there are more available players
+                                $remainingPlayersCount = $db->query('
+                                    SELECT COUNT(*) as count FROM players p 
+                                    WHERE p.current_year = 1 
+                                    AND NOT EXISTS (SELECT 1 FROM draft_picks dp WHERE dp.player_id = p.id AND dp.draft_session_id = ' . $draft_session_id . ')
+                                ')->fetchArray(SQLITE3_ASSOC);
                                 
-                                if ($nextTeamOrder) {
-                                    // Get next team ID
-                                    $nextTeamQuery = $db->prepare('SELECT id FROM draft_teams WHERE draft_session_id = ? AND draft_order = ?');
-                                    $nextTeamQuery->bindValue(1, $draft_session_id);
-                                    $nextTeamQuery->bindValue(2, $nextTeamOrder);
-                                    $nextTeamResult = $nextTeamQuery->execute();
-                                    $nextTeam = $nextTeamResult->fetchArray(SQLITE3_ASSOC);
+                                if ($remainingPlayersCount['count'] > 0) {
+                                    // More players available - continue draft
+                                    $currentPickInRound = ($pickNumber - 1) % $draft['num_teams'] + 1;
+                                    $nextTeamOrder = getNextTeamOrder($draft['num_teams'], $round, $currentPickInRound);
                                     
-                                    if ($nextTeam) {
-                                        // Update current pick team and reset timer
-                                        $updateDraft = $db->prepare('
-                                            UPDATE draft_sessions 
-                                            SET current_pick_team_id = ?, timer_expires_at = datetime("now", "+30 seconds") 
-                                            WHERE id = ?
-                                        ');
-                                        $updateDraft->bindValue(1, $nextTeam['id']);
-                                        $updateDraft->bindValue(2, $draft_session_id);
-                                        $updateDraft->execute();
+                                    if ($nextTeamOrder) {
+                                        // Get next team ID
+                                        $nextTeamQuery = $db->prepare('SELECT id FROM draft_teams WHERE draft_session_id = ? AND draft_order = ?');
+                                        $nextTeamQuery->bindValue(1, $draft_session_id);
+                                        $nextTeamQuery->bindValue(2, $nextTeamOrder);
+                                        $nextTeamResult = $nextTeamQuery->execute();
+                                        $nextTeam = $nextTeamResult->fetchArray(SQLITE3_ASSOC);
+                                        
+                                        if ($nextTeam) {
+                                            // Update current pick team and reset timer
+                                            $updateDraft = $db->prepare('
+                                                UPDATE draft_sessions 
+                                                SET current_pick_team_id = ?, timer_expires_at = datetime("now", "+30 seconds") 
+                                                WHERE id = ?
+                                            ');
+                                            $updateDraft->bindValue(1, $nextTeam['id']);
+                                            $updateDraft->bindValue(2, $draft_session_id);
+                                            $updateDraft->execute();
+                                        }
                                     }
                                 } else {
-                                    // Draft is complete
+                                    // No more players available - draft is complete
                                     $db->prepare('UPDATE draft_sessions SET status = "completed" WHERE id = ?')->bindValue(1, $draft_session_id)->execute();
                                 }
                                 
@@ -2524,6 +2554,13 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                                         <div id="timer-display">30</div>
                                     </div>
                                 </div>
+                                <div style="text-align: center; margin-top: 15px;">
+                                    <form method="POST" style="display: inline-block;">
+                                        <input type="hidden" name="action" value="end_draft">
+                                        <input type="hidden" name="draft_session_id" value="' . $currentDraft['id'] . '">
+                                        <button type="submit" class="btn btn-secondary" onclick="return confirm(\'Are you sure you want to end the draft early? This will finalize all teams as they are.\')">End Draft</button>
+                                    </form>
+                                </div>
                             </div>
                             
                             <div class="draft-main">
@@ -3067,14 +3104,26 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                     const numTeams = parseInt(this.value);
                     if (numTeams >= 2 && numTeams <= 4) {
                         // Fetch active players for captain selection
-                        fetch('?action=get_active_players')
+                        fetch(window.location.href + '&action=get_active_players', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            },
+                            body: 'action=get_active_players'
+                        })
                             .then(response => response.json())
                             .then(players => {
-                                generateCaptainSelects(numTeams, players);
-                                captainsContainer.style.display = 'block';
+                                console.log('Fetched players:', players);
+                                if (players && players.length > 0) {
+                                    generateCaptainSelects(numTeams, players);
+                                    captainsContainer.style.display = 'block';
+                                } else {
+                                    alert('No active players found. Please add some active players first.');
+                                }
                             })
                             .catch(error => {
                                 console.error('Error fetching players:', error);
+                                alert('Error fetching players. Please refresh and try again.');
                             });
                     } else {
                         captainsContainer.style.display = 'none';
@@ -3116,7 +3165,13 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
         }
         
         function loadDraftState() {
-            fetch('?action=get_draft_state')
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'action=get_draft_state'
+            })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -3124,6 +3179,12 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                         updateTimer(data.timeRemaining);
                         updateAvailablePlayers(data.availablePlayers, data.currentTeamId);
                         updateTeamRosters(data.teams, data.currentTeamId);
+                    } else if (data.message === 'No active draft') {
+                        // Draft has ended - redirect to Teams tab
+                        showDraftMessage('Draft completed! Redirecting to Teams...', 'success');
+                        setTimeout(() => {
+                            window.location.href = '?page=admin&tab=teams';
+                        }, 2000);
                     }
                 })
                 .catch(error => {
