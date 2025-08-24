@@ -133,6 +133,36 @@ CREATE TABLE event_settings (
 - Test Hall of Fame CRUD operations (add/edit/delete championships, awards, records)
 - Verify retro Madden styling consistency across all pages
 
+### **Next Manual Testing Required**
+**Comprehensive admin CRUD testing needed for newly implemented features:**
+
+#### **Event Settings Tab**
+- [ ] Update event date and verify it persists on page refresh
+- [ ] Update event location and confirm it displays on homepage
+- [ ] Update registration deadline and verify format/persistence
+- [ ] Update draft date and verify format/persistence  
+- [ ] Update current year and verify it affects other pages
+- [ ] Test form validation with invalid dates/empty fields
+- [ ] Verify success/error messages display correctly
+
+#### **Players Tab**
+- [ ] Add new player with all fields (name, nickname, position, bio, years, current year status)
+- [ ] Add new player with photo upload (PNG/JPEG validation)
+- [ ] Test photo upload with invalid formats (should reject)
+- [ ] Edit existing player and verify all fields update correctly
+- [ ] Edit player photo (should replace old photo file)
+- [ ] Delete player and verify photo file cleanup
+- [ ] Test player form validation (required fields, years 1-20)
+- [ ] Verify player data displays correctly on public Roster page
+- [ ] Test active/inactive player status functionality
+
+#### **Integration Testing**
+- [ ] Verify event settings changes reflect on homepage countdown and info
+- [ ] Confirm player changes appear correctly on public roster page
+- [ ] Test admin tab navigation and state persistence
+- [ ] Verify mobile responsiveness of new admin forms and tables
+- [ ] Check that existing Hall of Fame tabs still work correctly
+
 ## Common Commands
 - **Run locally**: `php -S localhost:8000`
 - **Database**: SQLite file will be created automatically

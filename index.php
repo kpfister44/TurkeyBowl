@@ -982,6 +982,9 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
             padding: 12px 15px;
             border-bottom: 1px solid var(--metallic-silver);
             color: var(--pure-white);
+            vertical-align: middle;
+            height: 65px;
+            box-sizing: border-box;
         }
 
         .admin-table tr:hover {
@@ -991,12 +994,85 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
         .admin-actions {
             display: flex;
             gap: 10px;
+            align-items: center;
+            justify-content: flex-start;
+            height: 100%;
+            min-height: 40px;
         }
 
         .btn-small {
             padding: 6px 12px;
             font-size: 0.8rem;
             border-radius: 4px;
+        }
+
+        /* Inline edit form styles */
+        .inline-edit-row {
+            background: rgba(192,192,192,0.1);
+            animation: slideDown 0.3s ease-out;
+        }
+
+        .inline-edit-form {
+            background: linear-gradient(135deg, var(--navy-base) 0%, rgba(26,35,50,0.9) 100%);
+            border: 2px solid var(--metallic-silver);
+            border-radius: 8px;
+            margin: 10px;
+            padding: 20px;
+            box-shadow: 
+                inset 0 1px 0 rgba(255,255,255,0.2),
+                0 4px 8px rgba(0,0,0,0.3),
+                0 0 20px rgba(192,192,192,0.1);
+        }
+
+        .inline-edit-form input[type="text"],
+        .inline-edit-form input[type="number"],
+        .inline-edit-form select,
+        .inline-edit-form textarea {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--metallic-silver);
+            border-radius: 4px;
+            color: white;
+            padding: 8px 12px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+
+        .inline-edit-form input[type="text"]:focus,
+        .inline-edit-form input[type="number"]:focus,
+        .inline-edit-form select:focus,
+        .inline-edit-form textarea:focus {
+            border-color: var(--brand-orange);
+            outline: none;
+            box-shadow: 0 0 10px rgba(255,102,0,0.3);
+        }
+
+        .inline-edit-form .form-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-start;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Mobile responsive adjustments for inline edit forms */
+        @media (max-width: 768px) {
+            .inline-edit-form form {
+                grid-template-columns: 1fr !important;
+            }
+            
+            .inline-edit-form .form-actions {
+                grid-column: 1;
+                justify-content: center;
+            }
         }
     </style>
 </head>
@@ -1519,7 +1595,7 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                     while ($player = $players->fetchArray(SQLITE3_ASSOC)) {
                         $hasPlayers = true;
                         $photoPath = $player['photo_path'] ? htmlspecialchars($player['photo_path']) : null;
-                        echo '<tr>
+                        echo '<tr id="player-row-' . $player['id'] . '">
                                 <td>';
                         if ($photoPath) {
                             echo '<div style="width: 40px; height: 40px; border-radius: 50%; overflow: hidden; border: 2px solid var(--bright-orange);">
@@ -1539,7 +1615,7 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                                 <td>' . $player['years_played'] . '</td>
                                 <td>' . ($player['current_year'] ? '<span style="color: var(--success-green);">✓ Active</span>' : '<span style="color: var(--metallic-silver);">Inactive</span>') . '</td>
                                 <td class="admin-actions">
-                                    <button onclick="editPlayer(' . $player['id'] . ')" class="btn btn-secondary btn-small">Edit</button>
+                                    <button onclick="editPlayer(' . $player['id'] . ', \'' . addslashes(htmlspecialchars($player['name'])) . '\', \'' . addslashes(htmlspecialchars($player['nickname'] ?: '')) . '\', \'' . addslashes(htmlspecialchars($player['position'] ?: '')) . '\', \'' . addslashes(htmlspecialchars($player['bio'] ?: '')) . '\', ' . $player['years_played'] . ', ' . ($player['current_year'] ? 'true' : 'false') . ')" class="btn btn-secondary btn-small">Edit</button>
                                     <button onclick="deletePlayer(' . $player['id'] . ', \'' . addslashes(htmlspecialchars($player['name'])) . '\')" class="btn btn-secondary btn-small" style="background: var(--alert-red);">Delete</button>
                                 </td>
                               </tr>';
@@ -1590,7 +1666,7 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                     $hasChampionships = false;
                     while ($championship = $championships->fetchArray(SQLITE3_ASSOC)) {
                         $hasChampionships = true;
-                        echo '<tr>
+                        echo '<tr id="championship-row-' . $championship['id'] . '">
                                 <td>' . $championship['year'] . '</td>
                                 <td>' . htmlspecialchars($championship['team_name']) . '</td>
                                 <td class="admin-actions">
@@ -1650,7 +1726,7 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                     $hasAwards = false;
                     while ($award = $awards->fetchArray(SQLITE3_ASSOC)) {
                         $hasAwards = true;
-                        echo '<tr>
+                        echo '<tr id="award-row-' . $award['id'] . '">
                                 <td>' . $award['year'] . '</td>
                                 <td>' . htmlspecialchars($award['award_name']) . '</td>
                                 <td>' . htmlspecialchars($award['player_name']) . '</td>
@@ -1716,7 +1792,7 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                     $hasRecords = false;
                     while ($record = $records->fetchArray(SQLITE3_ASSOC)) {
                         $hasRecords = true;
-                        echo '<tr>
+                        echo '<tr id="record-row-' . $record['id'] . '">
                                 <td>' . $record['year'] . '</td>
                                 <td>' . htmlspecialchars($record['record_name']) . '</td>
                                 <td>' . htmlspecialchars($record['record_value']) . '</td>
@@ -1778,6 +1854,12 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
             setInterval(updateCountdown, 1000);
         }
 
+        // Inline edit form management
+        function closeAllInlineEditForms() {
+            const editRows = document.querySelectorAll('.inline-edit-row');
+            editRows.forEach(row => row.remove());
+        }
+
         // Admin functionality
         function switchTab(tabName) {
             // Hide all tabs
@@ -1801,47 +1883,95 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
         }
 
         // Player functions
-        function editPlayer(id) {
-            // Create a more sophisticated edit form
-            const playerRow = event.target.closest('tr');
-            const cells = playerRow.querySelectorAll('td');
-            const nameCell = cells[1];
-            const positionCell = cells[2];
-            const yearsCell = cells[3];
-            const activeCell = cells[4];
+        function editPlayer(id, name, nickname, position, bio, yearsPlayed, isCurrentYear) {
+            // Close any existing edit forms
+            closeAllInlineEditForms();
             
-            // Extract current values
-            const currentName = nameCell.querySelector('strong').textContent;
-            const nicknameElement = nameCell.querySelector('small');
-            const currentNickname = nicknameElement ? nicknameElement.textContent.replace(/"/g, '') : '';
-            const currentPosition = positionCell.textContent === 'Utility' ? '' : positionCell.textContent;
-            const currentYears = yearsCell.textContent;
-            const isActive = activeCell.textContent.includes('✓ Active');
+            // Create the inline edit form
+            const editRow = document.createElement('tr');
+            editRow.id = `edit-player-${id}`;
+            editRow.className = 'inline-edit-row';
+            editRow.innerHTML = `
+                <td colspan="6" style="padding: 0;">
+                    <div class="inline-edit-form">
+                        <h4 style="color: var(--gold-accent); margin-bottom: 15px;">Edit Player</h4>
+                        <form id="edit-player-form-${id}" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end;">
+                            <div>
+                                <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Name:</label>
+                                <input type="text" id="edit-player-name-${id}" value="${name}" required style="width: 100%;">
+                            </div>
+                            <div>
+                                <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Nickname (Optional):</label>
+                                <input type="text" id="edit-player-nickname-${id}" value="${nickname}" style="width: 100%;">
+                            </div>
+                            <div>
+                                <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Position:</label>
+                                <input type="text" id="edit-player-position-${id}" value="${position}" style="width: 100%;">
+                            </div>
+                            <div>
+                                <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Years Played:</label>
+                                <input type="number" id="edit-player-years-${id}" value="${yearsPlayed}" min="1" max="20" required style="width: 100%;">
+                            </div>
+                            <div>
+                                <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Active This Year:</label>
+                                <select id="edit-player-current-${id}" required style="width: 100%;">
+                                    <option value="1" ${isCurrentYear ? 'selected' : ''}>Yes - Active</option>
+                                    <option value="0" ${!isCurrentYear ? 'selected' : ''}>No - Inactive</option>
+                                </select>
+                            </div>
+                            <div style="grid-column: 1 / -1;">
+                                <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Bio (Optional):</label>
+                                <textarea id="edit-player-bio-${id}" rows="3" style="width: 100%; resize: vertical;">${bio}</textarea>
+                            </div>
+                            <div class="form-actions" style="grid-column: 1 / -1;">
+                                <button type="button" onclick="savePlayerEdit(${id})" class="btn btn-primary btn-small">Save</button>
+                                <button type="button" onclick="cancelPlayerEdit(${id})" class="btn btn-secondary btn-small">Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+                </td>
+            `;
             
-            const newName = prompt('Edit player name:', currentName);
-            if (!newName) return;
+            // Insert the edit row after the current row
+            const currentRow = document.getElementById(`player-row-${id}`);
+            currentRow.parentNode.insertBefore(editRow, currentRow.nextSibling);
             
-            const newNickname = prompt('Edit nickname (optional):', currentNickname);
-            const newPosition = prompt('Edit position:', currentPosition);
-            const newYears = prompt('Edit years played:', currentYears);
-            const newActive = confirm(`Is ${newName} playing this year?\\n\\nClick OK for Yes, Cancel for No.`);
+            // Focus the first input
+            document.getElementById(`edit-player-name-${id}`).focus();
+        }
+        
+        function savePlayerEdit(id) {
+            const name = document.getElementById(`edit-player-name-${id}`).value;
+            const nickname = document.getElementById(`edit-player-nickname-${id}`).value;
+            const position = document.getElementById(`edit-player-position-${id}`).value;
+            const bio = document.getElementById(`edit-player-bio-${id}`).value;
+            const yearsPlayed = document.getElementById(`edit-player-years-${id}`).value;
+            const isCurrentYear = document.getElementById(`edit-player-current-${id}`).value;
             
-            if (newName && newYears && parseInt(newYears) >= 1 && parseInt(newYears) <= 20) {
+            if (name && yearsPlayed && parseInt(yearsPlayed) >= 1 && parseInt(yearsPlayed) <= 20) {
                 const form = document.createElement('form');
                 form.method = 'POST';
                 form.innerHTML = `
                     <input type="hidden" name="action" value="edit_player">
                     <input type="hidden" name="id" value="${id}">
-                    <input type="hidden" name="name" value="${newName}">
-                    <input type="hidden" name="nickname" value="${newNickname || ''}">
-                    <input type="hidden" name="position" value="${newPosition || ''}">
-                    <input type="hidden" name="years_played" value="${newYears}">
-                    ${newActive ? '<input type="hidden" name="current_year" value="1">' : ''}
+                    <input type="hidden" name="name" value="${name}">
+                    <input type="hidden" name="nickname" value="${nickname || ''}">
+                    <input type="hidden" name="position" value="${position || ''}">
+                    <input type="hidden" name="bio" value="${bio || ''}">
+                    <input type="hidden" name="years_played" value="${yearsPlayed}">
+                    ${isCurrentYear === '1' ? '<input type="hidden" name="current_year" value="1">' : ''}
                 `;
                 document.body.appendChild(form);
                 form.submit();
             } else {
                 alert('Please provide a valid name and years played (1-20).');
+            }
+        }
+        
+        function cancelPlayerEdit(id) {
+            const editRow = document.getElementById(`edit-player-${id}`);
+            if (editRow) {
+                editRow.remove();
             }
         }
         
@@ -1860,20 +1990,67 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
 
         // Championship functions
         function editChampionship(id, year, teamName) {
-            const newTeamName = prompt('Edit team name:', teamName);
-            const newYear = prompt('Edit year:', year);
+            // Close any existing edit forms
+            closeAllInlineEditForms();
             
-            if (newTeamName && newYear && newYear >= 1900 && newYear <= 2100) {
+            // Create the inline edit form
+            const editRow = document.createElement('tr');
+            editRow.id = `edit-championship-${id}`;
+            editRow.className = 'inline-edit-row';
+            editRow.innerHTML = `
+                <td colspan="3" style="padding: 0;">
+                    <div class="inline-edit-form">
+                        <h4 style="color: var(--gold-accent); margin-bottom: 15px;">Edit Championship</h4>
+                        <form id="edit-championship-form-${id}" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end;">
+                            <div>
+                                <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Year:</label>
+                                <input type="number" id="edit-championship-year-${id}" value="${year}" min="1900" max="2100" required style="width: 100%;">
+                            </div>
+                            <div>
+                                <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Team Name:</label>
+                                <input type="text" id="edit-championship-team-${id}" value="${teamName}" required style="width: 100%;">
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" onclick="saveChampionshipEdit(${id})" class="btn btn-primary btn-small">Save</button>
+                                <button type="button" onclick="cancelChampionshipEdit(${id})" class="btn btn-secondary btn-small">Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+                </td>
+            `;
+            
+            // Insert the edit row after the current row
+            const currentRow = document.getElementById(`championship-row-${id}`);
+            currentRow.parentNode.insertBefore(editRow, currentRow.nextSibling);
+            
+            // Focus the first input
+            document.getElementById(`edit-championship-year-${id}`).focus();
+        }
+        
+        function saveChampionshipEdit(id) {
+            const year = document.getElementById(`edit-championship-year-${id}`).value;
+            const teamName = document.getElementById(`edit-championship-team-${id}`).value;
+            
+            if (teamName && year && year >= 1900 && year <= 2100) {
                 const form = document.createElement('form');
                 form.method = 'POST';
                 form.innerHTML = `
                     <input type="hidden" name="action" value="edit_championship">
                     <input type="hidden" name="id" value="${id}">
-                    <input type="hidden" name="year" value="${newYear}">
-                    <input type="hidden" name="team_name" value="${newTeamName}">
+                    <input type="hidden" name="year" value="${year}">
+                    <input type="hidden" name="team_name" value="${teamName}">
                 `;
                 document.body.appendChild(form);
                 form.submit();
+            } else {
+                alert('Please fill in all required fields with valid values.');
+            }
+        }
+        
+        function cancelChampionshipEdit(id) {
+            const editRow = document.getElementById(`edit-championship-${id}`);
+            if (editRow) {
+                editRow.remove();
             }
         }
 
@@ -1892,22 +2069,73 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
 
         // Award functions
         function editAward(id, year, awardName, playerName) {
-            const newAwardName = prompt('Edit award name:', awardName);
-            const newPlayerName = prompt('Edit player name:', playerName);
-            const newYear = prompt('Edit year:', year);
+            // Close any existing edit forms
+            closeAllInlineEditForms();
             
-            if (newAwardName && newPlayerName && newYear && newYear >= 1900 && newYear <= 2100) {
+            // Create the inline edit form
+            const editRow = document.createElement('tr');
+            editRow.id = `edit-award-${id}`;
+            editRow.className = 'inline-edit-row';
+            editRow.innerHTML = `
+                <td colspan="4" style="padding: 0;">
+                    <div class="inline-edit-form">
+                        <h4 style="color: var(--gold-accent); margin-bottom: 15px;">Edit Award</h4>
+                        <form id="edit-award-form-${id}" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end;">
+                            <div>
+                                <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Year:</label>
+                                <input type="number" id="edit-award-year-${id}" value="${year}" min="1900" max="2100" required style="width: 100%;">
+                            </div>
+                            <div>
+                                <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Award Name:</label>
+                                <input type="text" id="edit-award-name-${id}" value="${awardName}" required style="width: 100%;">
+                            </div>
+                            <div>
+                                <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Player Name:</label>
+                                <input type="text" id="edit-award-player-${id}" value="${playerName}" required style="width: 100%;">
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" onclick="saveAwardEdit(${id})" class="btn btn-primary btn-small">Save</button>
+                                <button type="button" onclick="cancelAwardEdit(${id})" class="btn btn-secondary btn-small">Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+                </td>
+            `;
+            
+            // Insert the edit row after the current row
+            const currentRow = document.getElementById(`award-row-${id}`);
+            currentRow.parentNode.insertBefore(editRow, currentRow.nextSibling);
+            
+            // Focus the first input
+            document.getElementById(`edit-award-year-${id}`).focus();
+        }
+        
+        function saveAwardEdit(id) {
+            const year = document.getElementById(`edit-award-year-${id}`).value;
+            const awardName = document.getElementById(`edit-award-name-${id}`).value;
+            const playerName = document.getElementById(`edit-award-player-${id}`).value;
+            
+            if (awardName && playerName && year && year >= 1900 && year <= 2100) {
                 const form = document.createElement('form');
                 form.method = 'POST';
                 form.innerHTML = `
                     <input type="hidden" name="action" value="edit_award">
                     <input type="hidden" name="id" value="${id}">
-                    <input type="hidden" name="year" value="${newYear}">
-                    <input type="hidden" name="award_name" value="${newAwardName}">
-                    <input type="hidden" name="player_name" value="${newPlayerName}">
+                    <input type="hidden" name="year" value="${year}">
+                    <input type="hidden" name="award_name" value="${awardName}">
+                    <input type="hidden" name="player_name" value="${playerName}">
                 `;
                 document.body.appendChild(form);
                 form.submit();
+            } else {
+                alert('Please fill in all required fields with valid values.');
+            }
+        }
+        
+        function cancelAwardEdit(id) {
+            const editRow = document.getElementById(`edit-award-${id}`);
+            if (editRow) {
+                editRow.remove();
             }
         }
 
@@ -1926,24 +2154,79 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
 
         // Record functions
         function editRecord(id, year, recordName, recordValue, playerName) {
-            const newRecordName = prompt('Edit record name:', recordName);
-            const newRecordValue = prompt('Edit record value:', recordValue);
-            const newPlayerName = prompt('Edit player name (optional):', playerName);
-            const newYear = prompt('Edit year:', year);
+            // Close any existing edit forms
+            closeAllInlineEditForms();
             
-            if (newRecordName && newRecordValue && newYear && newYear >= 1900 && newYear <= 2100) {
+            // Create the inline edit form
+            const editRow = document.createElement('tr');
+            editRow.id = `edit-record-${id}`;
+            editRow.className = 'inline-edit-row';
+            editRow.innerHTML = `
+                <td colspan="5" style="padding: 0;">
+                    <div class="inline-edit-form">
+                        <h4 style="color: var(--gold-accent); margin-bottom: 15px;">Edit Record</h4>
+                        <form id="edit-record-form-${id}" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end;">
+                            <div>
+                                <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Year:</label>
+                                <input type="number" id="edit-record-year-${id}" value="${year}" min="1900" max="2100" required style="width: 100%;">
+                            </div>
+                            <div>
+                                <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Record Name:</label>
+                                <input type="text" id="edit-record-name-${id}" value="${recordName}" required style="width: 100%;">
+                            </div>
+                            <div>
+                                <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Record Value:</label>
+                                <input type="text" id="edit-record-value-${id}" value="${recordValue}" required style="width: 100%;">
+                            </div>
+                            <div>
+                                <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Player Name (Optional):</label>
+                                <input type="text" id="edit-record-player-${id}" value="${playerName}" style="width: 100%;">
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" onclick="saveRecordEdit(${id})" class="btn btn-primary btn-small">Save</button>
+                                <button type="button" onclick="cancelRecordEdit(${id})" class="btn btn-secondary btn-small">Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+                </td>
+            `;
+            
+            // Insert the edit row after the current row
+            const currentRow = document.getElementById(`record-row-${id}`);
+            currentRow.parentNode.insertBefore(editRow, currentRow.nextSibling);
+            
+            // Focus the first input
+            document.getElementById(`edit-record-year-${id}`).focus();
+        }
+        
+        function saveRecordEdit(id) {
+            const year = document.getElementById(`edit-record-year-${id}`).value;
+            const recordName = document.getElementById(`edit-record-name-${id}`).value;
+            const recordValue = document.getElementById(`edit-record-value-${id}`).value;
+            const playerName = document.getElementById(`edit-record-player-${id}`).value;
+            
+            if (recordName && recordValue && year && year >= 1900 && year <= 2100) {
                 const form = document.createElement('form');
                 form.method = 'POST';
                 form.innerHTML = `
                     <input type="hidden" name="action" value="edit_record">
                     <input type="hidden" name="id" value="${id}">
-                    <input type="hidden" name="year" value="${newYear}">
-                    <input type="hidden" name="record_name" value="${newRecordName}">
-                    <input type="hidden" name="record_value" value="${newRecordValue}">
-                    <input type="hidden" name="player_name" value="${newPlayerName || ''}">
+                    <input type="hidden" name="year" value="${year}">
+                    <input type="hidden" name="record_name" value="${recordName}">
+                    <input type="hidden" name="record_value" value="${recordValue}">
+                    <input type="hidden" name="player_name" value="${playerName || ''}">
                 `;
                 document.body.appendChild(form);
                 form.submit();
+            } else {
+                alert('Please fill in all required fields with valid values.');
+            }
+        }
+        
+        function cancelRecordEdit(id) {
+            const editRow = document.getElementById(`edit-record-${id}`);
+            if (editRow) {
+                editRow.remove();
             }
         }
 
