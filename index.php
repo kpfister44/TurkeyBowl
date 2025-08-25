@@ -1952,11 +1952,28 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                     break;
                     
                 case 'roster':
+                    $currentYear = $eventSettings['current_year'] ?? date('Y');
+                    
                     // Get current year players
                     $players = $db->query('SELECT * FROM players WHERE current_year = 1 ORDER BY name');
                     
+                    // Get captain IDs from completed drafts for this year
+                    $captainIds = [];
+                    $captainTeams = [];
+                    $completedDraft = $db->query('SELECT * FROM draft_sessions WHERE year = ' . $currentYear . ' AND status = "completed" ORDER BY created_at DESC LIMIT 1')->fetchArray(SQLITE3_ASSOC);
+                    if ($completedDraft) {
+                        $captainsQuery = $db->query('SELECT captain_player_id, team_name, team_color FROM draft_teams WHERE draft_session_id = ' . $completedDraft['id'] . ' AND captain_player_id IS NOT NULL');
+                        while ($captain = $captainsQuery->fetchArray(SQLITE3_ASSOC)) {
+                            $captainIds[] = $captain['captain_player_id'];
+                            $captainTeams[$captain['captain_player_id']] = [
+                                'team_name' => $captain['team_name'],
+                                'team_color' => $captain['team_color']
+                            ];
+                        }
+                    }
+                    
                     echo '<div class="card">
-                        <h1 class="card-title">2024 Turkey Bowl Roster</h1>
+                        <h1 class="card-title">' . $currentYear . ' Turkey Bowl Roster</h1>
                         <p>Meet this year\'s warriors ready to battle for flag football supremacy!</p>
                     </div>';
                     
@@ -1966,17 +1983,37 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                     while ($player = $players->fetchArray(SQLITE3_ASSOC)) {
                         $hasPlayers = true;
                         $photoPath = $player['photo_path'] ? htmlspecialchars($player['photo_path']) : 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=';
+                        $isCaptain = in_array($player['id'], $captainIds);
+                        $captainInfo = $isCaptain ? $captainTeams[$player['id']] : null;
                         
-                        echo '<div class="card" style="background: linear-gradient(145deg, #2a2a2a 0%, #1a1a1a 100%); border: 2px solid var(--bright-orange); transition: all 0.3s ease;" onmouseover="this.style.transform=\'translateY(-5px)\'" onmouseout="this.style.transform=\'translateY(0)\'">
-                                <div style="text-align: center;">
-                                    <div style="width: 120px; height: 120px; margin: 0 auto 15px; border-radius: 50%; overflow: hidden; border: 3px solid var(--gold-accent); background: var(--dark-gray);">
+                        $cardBorder = $isCaptain ? $captainInfo['team_color'] : 'var(--bright-orange)';
+                        $photoBorder = $isCaptain ? $captainInfo['team_color'] : 'var(--gold-accent)';
+                        
+                        echo '<div class="card" style="background: linear-gradient(145deg, #2a2a2a 0%, #1a1a1a 100%); border: 2px solid ' . $cardBorder . '; transition: all 0.3s ease; position: relative;" onmouseover="this.style.transform=\'translateY(-5px)\'" onmouseout="this.style.transform=\'translateY(0)\'">
+                                <div style="text-align: center;">';
+                        
+                        // Captain badge
+                        if ($isCaptain) {
+                            echo '<div style="position: absolute; top: -8px; left: 50%; transform: translateX(-50%); background: linear-gradient(145deg, ' . $captainInfo['team_color'] . ' 0%, ' . $captainInfo['team_color'] . '80 100%); color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; border: 2px solid var(--gold-accent); box-shadow: 0 2px 8px rgba(0,0,0,0.3); z-index: 10;">
+                                    ⭐ CAPTAIN ⭐
+                                  </div>';
+                        }
+                        
+                        echo '<div style="width: 120px; height: 120px; margin: 0 auto 15px; border-radius: 50%; overflow: hidden; border: 3px solid ' . $photoBorder . '; background: var(--dark-gray); position: relative;">
                                         <img src="' . $photoPath . '" alt="' . htmlspecialchars($player['name']) . '" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src=\'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=\'">
                                     </div>
                                     
-                                    <h3 style="color: var(--bright-orange); font-size: 1.3rem; margin-bottom: 5px;">' . htmlspecialchars($player['name']) . '</h3>';
+                                    <h3 style="color: ' . ($isCaptain ? $captainInfo['team_color'] : 'var(--bright-orange)') . '; font-size: 1.3rem; margin-bottom: 5px;">' . htmlspecialchars($player['name']) . '</h3>';
                         
                         if ($player['nickname']) {
                             echo '<p style="color: var(--gold-accent); font-style: italic; margin-bottom: 10px;">"' . htmlspecialchars($player['nickname']) . '"</p>';
+                        }
+                        
+                        // Show team name for captains
+                        if ($isCaptain) {
+                            echo '<div style="background: linear-gradient(145deg, ' . $captainInfo['team_color'] . '20, ' . $captainInfo['team_color'] . '10); padding: 6px 12px; border-radius: 20px; margin: 10px auto; display: inline-block; border: 1px solid ' . $captainInfo['team_color'] . ';">
+                                    <span style="color: ' . $captainInfo['team_color'] . '; font-weight: bold; font-size: 0.85rem; text-transform: uppercase;">' . htmlspecialchars($captainInfo['team_name']) . '</span>
+                                  </div>';
                         }
                         
                         echo '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; text-align: left;">
