@@ -974,6 +974,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
                 exit;
                 break;
+                
+            case 'transfer_player':
+                requireAdmin();
+                header('Content-Type: application/json');
+                
+                $draftPickId = filter_var($_POST['draft_pick_id'] ?? '', FILTER_VALIDATE_INT);
+                $newTeamId = filter_var($_POST['new_team_id'] ?? '', FILTER_VALIDATE_INT);
+                
+                if (!$draftPickId || !$newTeamId) {
+                    echo json_encode(['success' => false, 'error' => 'Invalid parameters']);
+                    exit;
+                }
+                
+                // Verify the draft pick exists and get current info
+                $checkQuery = $db->prepare('SELECT * FROM draft_picks WHERE id = ?');
+                $checkQuery->bindValue(1, $draftPickId);
+                $checkResult = $checkQuery->execute();
+                $draftPick = $checkResult->fetchArray(SQLITE3_ASSOC);
+                
+                if (!$draftPick) {
+                    echo json_encode(['success' => false, 'error' => 'Draft pick not found']);
+                    exit;
+                }
+                
+                // Verify the target team exists
+                $teamCheckQuery = $db->prepare('SELECT * FROM draft_teams WHERE id = ?');
+                $teamCheckQuery->bindValue(1, $newTeamId);
+                $teamCheckResult = $teamCheckQuery->execute();
+                $targetTeam = $teamCheckResult->fetchArray(SQLITE3_ASSOC);
+                
+                if (!$targetTeam) {
+                    echo json_encode(['success' => false, 'error' => 'Target team not found']);
+                    exit;
+                }
+                
+                // Update the draft pick to assign player to new team
+                $updateQuery = $db->prepare('UPDATE draft_picks SET team_id = ? WHERE id = ?');
+                $updateQuery->bindValue(1, $newTeamId);
+                $updateQuery->bindValue(2, $draftPickId);
+                
+                if ($updateQuery->execute()) {
+                    echo json_encode(['success' => true]);
+                } else {
+                    echo json_encode(['success' => false, 'error' => 'Database update failed']);
+                }
+                exit;
+                break;
+                
+            case 'update_team':
+                requireAdmin();
+                header('Content-Type: application/json');
+                
+                $teamId = filter_var($_POST['team_id'] ?? '', FILTER_VALIDATE_INT);
+                $teamName = trim($_POST['team_name'] ?? '');
+                $teamColor = trim($_POST['team_color'] ?? '');
+                
+                if (!$teamId || !$teamName || !$teamColor) {
+                    echo json_encode(['success' => false, 'error' => 'Invalid parameters']);
+                    exit;
+                }
+                
+                // Validate color format (hex color)
+                if (!preg_match('/^#[a-fA-F0-9]{6}$/', $teamColor)) {
+                    echo json_encode(['success' => false, 'error' => 'Invalid color format']);
+                    exit;
+                }
+                
+                // Verify team exists
+                $checkQuery = $db->prepare('SELECT * FROM draft_teams WHERE id = ?');
+                $checkQuery->bindValue(1, $teamId);
+                $checkResult = $checkQuery->execute();
+                $team = $checkResult->fetchArray(SQLITE3_ASSOC);
+                
+                if (!$team) {
+                    echo json_encode(['success' => false, 'error' => 'Team not found']);
+                    exit;
+                }
+                
+                // Update the team
+                $updateQuery = $db->prepare('UPDATE draft_teams SET team_name = ?, team_color = ? WHERE id = ?');
+                $updateQuery->bindValue(1, $teamName);
+                $updateQuery->bindValue(2, $teamColor);
+                $updateQuery->bindValue(3, $teamId);
+                
+                if ($updateQuery->execute()) {
+                    echo json_encode(['success' => true]);
+                } else {
+                    echo json_encode(['success' => false, 'error' => 'Database update failed']);
+                }
+                exit;
+                break;
         }
     }
 }
@@ -1734,6 +1825,105 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                 grid-template-columns: 1fr;
             }
         }
+        
+        /* Team Management Styles */
+        .team-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .team-title-section {
+            position: relative;
+        }
+        
+        .team-edit-form {
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid var(--bright-orange);
+        }
+        
+        .team-edit-form .form-input {
+            width: 100%;
+            max-width: 200px;
+        }
+        
+        .team-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .btn-sm {
+            padding: 8px 12px;
+            font-size: 0.8rem;
+        }
+        
+        /* Drag and Drop Styles */
+        .draggable-player {
+            cursor: grab;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+        
+        .draggable-player:hover {
+            background: rgba(255,102,0,0.1);
+            transform: translateX(5px);
+        }
+        
+        .draggable-player[draggable="true"] .drag-handle {
+            opacity: 1;
+        }
+        
+        .draggable-player:active {
+            cursor: grabbing;
+        }
+        
+        .team-roster.drop-zone {
+            min-height: 100px;
+            border: 2px dashed transparent;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .team-roster.drop-zone.drag-over {
+            border-color: var(--bright-orange);
+            background: rgba(255,102,0,0.1);
+            transform: scale(1.02);
+        }
+        
+        .drag-handle {
+            font-size: 1.2rem;
+            opacity: 0.5;
+            transition: opacity 0.2s ease;
+        }
+        
+        .drag-handle:hover {
+            opacity: 1;
+            color: var(--bright-orange);
+        }
+        
+        .edit-team-btn:hover {
+            background: var(--gold-accent) !important;
+            transform: scale(1.05);
+        }
+        
+        /* Success/Error message styles */
+        .temp-message {
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1768,9 +1958,6 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                         <a href="?page=teams" class="nav-link <?= $page === 'teams' ? 'active' : '' ?>">Teams</a>
                     </li>
                     <?php if (isLoggedIn()): ?>
-                        <li class="nav-item">
-                            <a href="?page=draft" class="nav-link <?= $page === 'draft' ? 'active' : '' ?>">Draft</a>
-                        </li>
                         <li class="nav-item">
                             <a href="?page=admin" class="nav-link <?= $page === 'admin' ? 'active' : '' ?>">Admin</a>
                         </li>
@@ -2710,25 +2897,43 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                         ');
                         
                         echo '<div class="card">
-                            <h3 style="color: var(--gold-accent); margin-bottom: 20px;">Draft Teams - ' . $completedDraft['year'] . '</h3>
-                            <div class="teams-display">';
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                <h3 style="color: var(--gold-accent); margin: 0;">Team Management - ' . $completedDraft['year'] . '</h3>
+                                <div class="team-controls">
+                                    <button onclick="toggleEditMode()" id="edit-mode-btn" class="btn btn-secondary">
+                                        📝 Edit Teams
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="teams-display" id="teams-display">';
                         
                         while ($team = $draftTeams->fetchArray(SQLITE3_ASSOC)) {
-                            echo '<div class="team-card" style="border-top: 4px solid ' . $team['team_color'] . ';">
+                            echo '<div class="team-card editable-team" data-team-id="' . $team['id'] . '" style="border-top: 4px solid ' . $team['team_color'] . ';">
                                 <div class="team-header">
-                                    <h4 style="color: ' . $team['team_color'] . ';">' . htmlspecialchars($team['team_name']) . '</h4>
+                                    <div class="team-title-section">
+                                        <h4 class="team-name-display" style="color: ' . $team['team_color'] . ';">' . htmlspecialchars($team['team_name']) . '</h4>
+                                        <div class="team-edit-form" style="display: none;">
+                                            <input type="text" class="team-name-input form-input" value="' . htmlspecialchars($team['team_name']) . '" style="margin-bottom: 10px;">
+                                            <input type="color" class="team-color-input" value="' . $team['team_color'] . '" style="margin-bottom: 10px; height: 40px; border: none; border-radius: 4px; width: 100px;">
+                                            <div class="team-buttons">
+                                                <button onclick="saveTeam(' . $team['id'] . ')" class="btn btn-primary btn-sm">💾 Save</button>
+                                                <button onclick="cancelTeamEdit(' . $team['id'] . ')" class="btn btn-secondary btn-sm">❌ Cancel</button>
+                                            </div>
+                                        </div>
+                                    </div>
                                     <div class="captain-badge">
                                         <span style="color: var(--gold-accent);">👑 Captain: ' . htmlspecialchars($team['captain_name']) . '</span>
                                     </div>
                                     <div class="team-stats">
                                         <span style="color: var(--metallic-silver);">' . $team['player_count'] . ' Players</span>
+                                        <button onclick="editTeam(' . $team['id'] . ')" class="edit-team-btn" style="display: none; margin-left: 10px; background: var(--bright-orange); color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">✏️ Edit</button>
                                     </div>
                                 </div>
-                                <div class="team-roster">';
+                                <div class="team-roster" id="team-' . $team['id'] . '-roster">';
                             
                             // Get team players
                             $teamPlayers = $db->query('
-                                SELECT p.*, dp.position_type, dp.round, dp.pick_number 
+                                SELECT p.*, dp.position_type, dp.round, dp.pick_number, dp.id as draft_pick_id 
                                 FROM draft_picks dp 
                                 JOIN players p ON dp.player_id = p.id 
                                 WHERE dp.team_id = ' . $team['id'] . ' 
@@ -2739,8 +2944,9 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                                 $isCaptain = $player['id'] == $team['captain_player_id'];
                                 $captainIcon = $isCaptain ? '👑 ' : '';
                                 
-                                echo '<div class="roster-player">
+                                echo '<div class="roster-player draggable-player" draggable="false" data-player-id="' . $player['id'] . '" data-draft-pick-id="' . $player['draft_pick_id'] . '" data-current-team="' . $team['id'] . '">
                                     <div class="player-info">
+                                        <div class="drag-handle" style="display: none; margin-right: 10px; color: var(--metallic-silver); cursor: grab;">⋮⋮</div>
                                         ' . ($player['photo_path'] ? '<img src="' . htmlspecialchars($player['photo_path']) . '" alt="Photo" class="player-photo">' : '<div class="player-photo-placeholder">📷</div>') . '
                                         <div class="player-details">
                                             <strong style="color: var(--pure-white);">' . $captainIcon . htmlspecialchars($player['name']) . '</strong>';
@@ -2837,6 +3043,209 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
             const url = new URL(window.location);
             url.searchParams.set('tab', tabName);
             window.history.replaceState({}, '', url);
+        }
+
+        // Team Management Functions
+        let editModeActive = false;
+        
+        function toggleEditMode() {
+            editModeActive = !editModeActive;
+            const btn = document.getElementById('edit-mode-btn');
+            const dragHandles = document.querySelectorAll('.drag-handle');
+            const editButtons = document.querySelectorAll('.edit-team-btn');
+            const players = document.querySelectorAll('.draggable-player');
+            const teamCards = document.querySelectorAll('.team-roster');
+            
+            if (editModeActive) {
+                btn.textContent = '✅ Done Editing';
+                btn.classList.remove('btn-secondary');
+                btn.classList.add('btn-success');
+                
+                // Show drag handles and edit buttons
+                dragHandles.forEach(handle => handle.style.display = 'block');
+                editButtons.forEach(button => button.style.display = 'inline-block');
+                
+                // Enable dragging
+                players.forEach(player => {
+                    player.draggable = true;
+                    player.addEventListener('dragstart', handleDragStart);
+                    player.addEventListener('dragend', handleDragEnd);
+                });
+                
+                // Enable drop zones
+                teamCards.forEach(roster => {
+                    roster.addEventListener('dragover', handleDragOver);
+                    roster.addEventListener('drop', handleDrop);
+                    roster.classList.add('drop-zone');
+                });
+            } else {
+                btn.textContent = '📝 Edit Teams';
+                btn.classList.remove('btn-success');
+                btn.classList.add('btn-secondary');
+                
+                // Hide drag handles and edit buttons
+                dragHandles.forEach(handle => handle.style.display = 'none');
+                editButtons.forEach(button => button.style.display = 'none');
+                
+                // Disable dragging
+                players.forEach(player => {
+                    player.draggable = false;
+                    player.removeEventListener('dragstart', handleDragStart);
+                    player.removeEventListener('dragend', handleDragEnd);
+                });
+                
+                // Disable drop zones
+                teamCards.forEach(roster => {
+                    roster.removeEventListener('dragover', handleDragOver);
+                    roster.removeEventListener('drop', handleDrop);
+                    roster.classList.remove('drop-zone');
+                });
+                
+                // Hide any open edit forms
+                document.querySelectorAll('.team-edit-form').forEach(form => {
+                    form.style.display = 'none';
+                });
+                document.querySelectorAll('.team-name-display').forEach(display => {
+                    display.style.display = 'block';
+                });
+            }
+        }
+        
+        // Drag and Drop Functions
+        let draggedPlayer = null;
+        
+        function handleDragStart(e) {
+            draggedPlayer = e.target;
+            e.target.style.opacity = '0.5';
+        }
+        
+        function handleDragEnd(e) {
+            e.target.style.opacity = '1';
+            draggedPlayer = null;
+        }
+        
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.currentTarget.classList.add('drag-over');
+        }
+        
+        function handleDrop(e) {
+            e.preventDefault();
+            const dropZone = e.currentTarget;
+            dropZone.classList.remove('drag-over');
+            
+            if (!draggedPlayer) return;
+            
+            const targetTeamRoster = dropZone;
+            const targetTeamId = targetTeamRoster.id.match(/team-(\d+)-roster/)[1];
+            const currentTeamId = draggedPlayer.dataset.currentTeam;
+            
+            if (targetTeamId === currentTeamId) return; // Same team
+            
+            // Move player to new team
+            targetTeamRoster.appendChild(draggedPlayer);
+            draggedPlayer.dataset.currentTeam = targetTeamId;
+            
+            // Send update to server
+            transferPlayer(draggedPlayer.dataset.draftPickId, targetTeamId);
+        }
+        
+        function transferPlayer(draftPickId, newTeamId) {
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `action=transfer_player&draft_pick_id=${draftPickId}&new_team_id=${newTeamId}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showMessage('Player transferred successfully!', 'success');
+                    // Update team stats
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    showMessage('Error transferring player: ' + (data.error || 'Unknown error'), 'error');
+                    window.location.reload(); // Revert on error
+                }
+            })
+            .catch(error => {
+                console.error('Transfer error:', error);
+                showMessage('Transfer failed. Refreshing page...', 'error');
+                setTimeout(() => window.location.reload(), 1500);
+            });
+        }
+        
+        function editTeam(teamId) {
+            const teamCard = document.querySelector(`[data-team-id="${teamId}"]`);
+            const nameDisplay = teamCard.querySelector('.team-name-display');
+            const editForm = teamCard.querySelector('.team-edit-form');
+            
+            nameDisplay.style.display = 'none';
+            editForm.style.display = 'block';
+        }
+        
+        function cancelTeamEdit(teamId) {
+            const teamCard = document.querySelector(`[data-team-id="${teamId}"]`);
+            const nameDisplay = teamCard.querySelector('.team-name-display');
+            const editForm = teamCard.querySelector('.team-edit-form');
+            
+            nameDisplay.style.display = 'block';
+            editForm.style.display = 'none';
+        }
+        
+        function saveTeam(teamId) {
+            const teamCard = document.querySelector(`[data-team-id="${teamId}"]`);
+            const nameInput = teamCard.querySelector('.team-name-input');
+            const colorInput = teamCard.querySelector('.team-color-input');
+            
+            const newName = nameInput.value.trim();
+            const newColor = colorInput.value;
+            
+            if (!newName) {
+                showMessage('Team name cannot be empty', 'error');
+                return;
+            }
+            
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `action=update_team&team_id=${teamId}&team_name=${encodeURIComponent(newName)}&team_color=${encodeURIComponent(newColor)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showMessage('Team updated successfully!', 'success');
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    showMessage('Error updating team: ' + (data.error || 'Unknown error'), 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Update error:', error);
+                showMessage('Update failed', 'error');
+            });
+        }
+        
+        function showMessage(message, type) {
+            // Create or update message display
+            let messageDiv = document.querySelector('.temp-message');
+            if (!messageDiv) {
+                messageDiv = document.createElement('div');
+                messageDiv.className = 'temp-message';
+                messageDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; padding: 15px; border-radius: 5px; color: white; font-weight: bold; z-index: 1000; max-width: 300px;';
+                document.body.appendChild(messageDiv);
+            }
+            
+            messageDiv.textContent = message;
+            messageDiv.style.backgroundColor = type === 'success' ? 'var(--bright-orange)' : '#dc3545';
+            messageDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 3000);
         }
 
         // Player functions
