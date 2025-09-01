@@ -94,6 +94,50 @@ function initDatabase() {
         )
     ');
     
+    // Draft system tables
+    $db->exec('
+        CREATE TABLE IF NOT EXISTS draft_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            year INTEGER NOT NULL,
+            num_teams INTEGER NOT NULL,
+            status TEXT DEFAULT "setup",
+            current_pick_team_id INTEGER,
+            current_round INTEGER DEFAULT 1,
+            current_pick_in_round INTEGER DEFAULT 1,
+            timer_expires_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ');
+    
+    $db->exec('
+        CREATE TABLE IF NOT EXISTS draft_teams (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            draft_session_id INTEGER NOT NULL,
+            team_name TEXT NOT NULL,
+            captain_player_id INTEGER,
+            draft_order INTEGER NOT NULL,
+            team_color TEXT DEFAULT "#ff6600",
+            FOREIGN KEY (draft_session_id) REFERENCES draft_sessions (id),
+            FOREIGN KEY (captain_player_id) REFERENCES players (id)
+        )
+    ');
+    
+    $db->exec('
+        CREATE TABLE IF NOT EXISTS draft_picks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            draft_session_id INTEGER NOT NULL,
+            team_id INTEGER NOT NULL,
+            player_id INTEGER NOT NULL,
+            round INTEGER NOT NULL,
+            pick_number INTEGER NOT NULL,
+            position_type TEXT DEFAULT "starter",
+            pick_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (draft_session_id) REFERENCES draft_sessions (id),
+            FOREIGN KEY (team_id) REFERENCES draft_teams (id),
+            FOREIGN KEY (player_id) REFERENCES players (id)
+        )
+    ');
+    
     // Insert default admin user (password: admin123)
     $defaultAdmin = $db->prepare('INSERT OR IGNORE INTO admin_users (email, password_hash) VALUES (?, ?)');
     $defaultAdmin->bindValue(1, 'admin@turkeybowl.com');
@@ -129,6 +173,30 @@ function requireAdmin() {
     if (!isLoggedIn()) {
         header('Location: ?page=login');
         exit;
+    }
+}
+
+function getNextTeamOrder($numTeams, $round, $currentPickInRound) {
+    // Snake draft: Round 1: 1-2-3-4, Round 2: 4-3-2-1, Round 3: 1-2-3-4, etc.
+    $isOddRound = ($round % 2) === 1;
+    
+    if ($currentPickInRound < $numTeams) {
+        // More picks in current round
+        if ($isOddRound) {
+            return $currentPickInRound + 1;
+        } else {
+            return $numTeams - $currentPickInRound;
+        }
+    } else {
+        // Move to next round
+        $nextRound = $round + 1;
+        $nextIsOddRound = ($nextRound % 2) === 1;
+        
+        if ($nextIsOddRound) {
+            return 1; // Start at team 1
+        } else {
+            return $numTeams; // Start at last team
+        }
     }
 }
 
@@ -579,6 +647,422 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['error_message'] = 'Invalid record ID.';
                 }
                 header('Location: ?page=admin&tab=records');
+                exit;
+                break;
+                
+            // Draft system actions
+            case 'setup_draft':
+                requireAdmin();
+                $num_teams = filter_var($_POST['num_teams'] ?? '', FILTER_VALIDATE_INT);
+                $draft_year = filter_var($_POST['draft_year'] ?? '', FILTER_VALIDATE_INT);
+                $captains = $_POST['captains'] ?? [];
+                
+                if ($num_teams >= 2 && $num_teams <= 4 && $draft_year && count($captains) === $num_teams) {
+                    // Create draft session
+                    $stmt = $db->prepare('INSERT INTO draft_sessions (year, num_teams, status) VALUES (?, ?, "setup")');
+                    $stmt->bindValue(1, $draft_year);
+                    $stmt->bindValue(2, $num_teams);
+                    
+                    if ($stmt->execute()) {
+                        $draft_session_id = $db->lastInsertRowID();
+                        
+                        // Team colors
+                        $colors = ['#ff6600', '#ffd700', '#c0c0c0', '#1a2332'];
+                        
+                        // Create teams with captains
+                        $success = true;
+                        for ($i = 0; $i < $num_teams; $i++) {
+                            $captain_id = filter_var($captains[$i], FILTER_VALIDATE_INT);
+                            
+                            if ($captain_id) {
+                                // Get captain name for team name
+                                $captainQuery = $db->prepare('SELECT name FROM players WHERE id = ? AND current_year = 1');
+                                $captainQuery->bindValue(1, $captain_id);
+                                $captainResult = $captainQuery->execute();
+                                $captain = $captainResult->fetchArray(SQLITE3_ASSOC);
+                                
+                                if ($captain) {
+                                    $lastName = explode(' ', trim($captain['name']));
+                                    $lastName = end($lastName);
+                                    $teamName = 'Team ' . $lastName;
+                                    
+                                    $teamStmt = $db->prepare('INSERT INTO draft_teams (draft_session_id, team_name, captain_player_id, draft_order, team_color) VALUES (?, ?, ?, ?, ?)');
+                                    $teamStmt->bindValue(1, $draft_session_id);
+                                    $teamStmt->bindValue(2, $teamName);
+                                    $teamStmt->bindValue(3, $captain_id);
+                                    $teamStmt->bindValue(4, $i + 1);
+                                    $teamStmt->bindValue(5, $colors[$i]);
+                                    
+                                    if (!$teamStmt->execute()) {
+                                        $success = false;
+                                        break;
+                                    }
+                                } else {
+                                    $success = false;
+                                    break;
+                                }
+                            } else {
+                                $success = false;
+                                break;
+                            }
+                        }
+                        
+                        if ($success) {
+                            $_SESSION['success_message'] = 'Draft setup completed! Ready to start drafting.';
+                        } else {
+                            $_SESSION['error_message'] = 'Error setting up teams. Please try again.';
+                        }
+                    } else {
+                        $_SESSION['error_message'] = 'Error creating draft session.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Please provide valid team count, year, and select all captains.';
+                }
+                header('Location: ?page=admin&tab=draft');
+                exit;
+                break;
+                
+            case 'start_draft':
+                requireAdmin();
+                $draft_session_id = filter_var($_POST['draft_session_id'] ?? '', FILTER_VALIDATE_INT);
+                
+                if ($draft_session_id) {
+                    // Start the draft
+                    $stmt = $db->prepare('UPDATE draft_sessions SET status = "active", timer_expires_at = datetime("now", "+30 seconds") WHERE id = ? AND status = "setup"');
+                    $stmt->bindValue(1, $draft_session_id);
+                    
+                    // Set first team to draft
+                    $firstTeamStmt = $db->prepare('UPDATE draft_sessions SET current_pick_team_id = (SELECT id FROM draft_teams WHERE draft_session_id = ? AND draft_order = 1) WHERE id = ?');
+                    $firstTeamStmt->bindValue(1, $draft_session_id);
+                    $firstTeamStmt->bindValue(2, $draft_session_id);
+                    $firstTeamStmt->execute();
+                    
+                    if ($stmt->execute() && $db->changes() > 0) {
+                        $_SESSION['success_message'] = 'Draft started! Good luck!';
+                    } else {
+                        $_SESSION['error_message'] = 'Error starting draft or draft already in progress.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Invalid draft session.';
+                }
+                header('Location: ?page=admin&tab=draft');
+                exit;
+                break;
+                
+            case 'reset_draft':
+                requireAdmin();
+                $draft_session_id = filter_var($_POST['draft_session_id'] ?? '', FILTER_VALIDATE_INT);
+                
+                if ($draft_session_id) {
+                    // Delete draft picks
+                    $db->prepare('DELETE FROM draft_picks WHERE draft_session_id = ?')->bindValue(1, $draft_session_id)->execute();
+                    // Delete draft teams  
+                    $db->prepare('DELETE FROM draft_teams WHERE draft_session_id = ?')->bindValue(1, $draft_session_id)->execute();
+                    // Delete draft session
+                    $db->prepare('DELETE FROM draft_sessions WHERE id = ?')->bindValue(1, $draft_session_id)->execute();
+                    
+                    $_SESSION['success_message'] = 'Draft reset successfully.';
+                } else {
+                    $_SESSION['error_message'] = 'Invalid draft session.';
+                }
+                header('Location: ?page=admin&tab=draft');
+                exit;
+                break;
+                
+            case 'end_draft':
+                requireAdmin();
+                $draft_session_id = filter_var($_POST['draft_session_id'] ?? '', FILTER_VALIDATE_INT);
+                
+                if ($draft_session_id) {
+                    $stmt = $db->prepare('UPDATE draft_sessions SET status = "completed" WHERE id = ? AND status = "active"');
+                    $stmt->bindValue(1, $draft_session_id);
+                    
+                    if ($stmt->execute() && $db->changes() > 0) {
+                        $_SESSION['success_message'] = 'Draft ended successfully! Check the Teams tab to see final rosters.';
+                    } else {
+                        $_SESSION['error_message'] = 'Error ending draft or no active draft found.';
+                    }
+                } else {
+                    $_SESSION['error_message'] = 'Invalid draft session.';
+                }
+                header('Location: ?page=admin&tab=teams');
+                exit;
+                break;
+                
+            case 'draft_player':
+                requireAdmin();
+                $player_id = filter_var($_POST['player_id'] ?? '', FILTER_VALIDATE_INT);
+                
+                // Get current active draft
+                $draft = $db->query('SELECT * FROM draft_sessions WHERE status = "active" ORDER BY created_at DESC LIMIT 1')->fetchArray(SQLITE3_ASSOC);
+                
+                if (!$draft) {
+                    echo json_encode(['success' => false, 'message' => 'No active draft session']);
+                    exit;
+                }
+                
+                $draft_session_id = $draft['id'];
+                $team_id = $draft['current_pick_team_id'];
+                
+                if ($draft_session_id && $team_id && $player_id) {
+                    if ($draft) {
+                        // Check if player is available (active this year and not drafted)
+                        $playerCheck = $db->prepare('
+                            SELECT p.* FROM players p 
+                            WHERE p.id = ? AND p.current_year = 1 
+                            AND NOT EXISTS (SELECT 1 FROM draft_picks dp WHERE dp.player_id = p.id AND dp.draft_session_id = ?)
+                        ');
+                        $playerCheck->bindValue(1, $player_id);
+                        $playerCheck->bindValue(2, $draft_session_id);
+                        $playerResult = $playerCheck->execute();
+                        $player = $playerResult->fetchArray(SQLITE3_ASSOC);
+                        
+                        if ($player) {
+                            // Calculate pick number
+                            $pickCount = $db->query('SELECT COUNT(*) as count FROM draft_picks WHERE draft_session_id = ' . $draft_session_id)->fetchArray(SQLITE3_ASSOC);
+                            $pickNumber = $pickCount['count'] + 1;
+                            $round = ceil($pickNumber / $draft['num_teams']);
+                            
+                            // Draft the player
+                            $draftStmt = $db->prepare('
+                                INSERT INTO draft_picks (draft_session_id, team_id, player_id, round, pick_number) 
+                                VALUES (?, ?, ?, ?, ?)
+                            ');
+                            $draftStmt->bindValue(1, $draft_session_id);
+                            $draftStmt->bindValue(2, $team_id);
+                            $draftStmt->bindValue(3, $player_id);
+                            $draftStmt->bindValue(4, $round);
+                            $draftStmt->bindValue(5, $pickNumber);
+                            
+                            if ($draftStmt->execute()) {
+                                // Check if there are more available players
+                                $remainingPlayersCount = $db->query('
+                                    SELECT COUNT(*) as count FROM players p 
+                                    WHERE p.current_year = 1 
+                                    AND NOT EXISTS (SELECT 1 FROM draft_picks dp WHERE dp.player_id = p.id AND dp.draft_session_id = ' . $draft_session_id . ')
+                                ')->fetchArray(SQLITE3_ASSOC);
+                                
+                                if ($remainingPlayersCount['count'] > 0) {
+                                    // More players available - continue draft
+                                    $currentPickInRound = ($pickNumber - 1) % $draft['num_teams'] + 1;
+                                    $nextTeamOrder = getNextTeamOrder($draft['num_teams'], $round, $currentPickInRound);
+                                    
+                                    if ($nextTeamOrder) {
+                                        // Get next team ID
+                                        $nextTeamQuery = $db->prepare('SELECT id FROM draft_teams WHERE draft_session_id = ? AND draft_order = ?');
+                                        $nextTeamQuery->bindValue(1, $draft_session_id);
+                                        $nextTeamQuery->bindValue(2, $nextTeamOrder);
+                                        $nextTeamResult = $nextTeamQuery->execute();
+                                        $nextTeam = $nextTeamResult->fetchArray(SQLITE3_ASSOC);
+                                        
+                                        if ($nextTeam) {
+                                            // Update current pick team and reset timer
+                                            $updateDraft = $db->prepare('
+                                                UPDATE draft_sessions 
+                                                SET current_pick_team_id = ?, timer_expires_at = datetime("now", "+30 seconds") 
+                                                WHERE id = ?
+                                            ');
+                                            $updateDraft->bindValue(1, $nextTeam['id']);
+                                            $updateDraft->bindValue(2, $draft_session_id);
+                                            $updateDraft->execute();
+                                        }
+                                    }
+                                } else {
+                                    // No more players available - draft is complete
+                                    $db->prepare('UPDATE draft_sessions SET status = "completed" WHERE id = ?')->bindValue(1, $draft_session_id)->execute();
+                                }
+                                
+                                echo json_encode(['success' => true, 'message' => 'Player drafted successfully!']);
+                            } else {
+                                echo json_encode(['success' => false, 'message' => 'Error drafting player.']);
+                            }
+                        } else {
+                            echo json_encode(['success' => false, 'message' => 'Player not available.']);
+                        }
+                    } else {
+                        echo json_encode(['success' => false, 'message' => 'Not your turn to draft.']);
+                    }
+                } else {
+                    echo json_encode(['success' => false, 'message' => 'Invalid request.']);
+                }
+                exit;
+                break;
+                
+            case 'get_active_players':
+                requireAdmin();
+                $players = $db->query('SELECT id, name, nickname FROM players WHERE current_year = 1 ORDER BY name');
+                $playerList = [];
+                while ($player = $players->fetchArray(SQLITE3_ASSOC)) {
+                    $playerList[] = $player;
+                }
+                header('Content-Type: application/json');
+                echo json_encode($playerList);
+                exit;
+                break;
+                
+            case 'get_draft_state':
+                requireAdmin();
+                // Get current draft session
+                $draft = $db->query('SELECT * FROM draft_sessions WHERE status = "active" ORDER BY created_at DESC LIMIT 1')->fetchArray(SQLITE3_ASSOC);
+                
+                if (!$draft) {
+                    echo json_encode(['success' => false, 'message' => 'No active draft']);
+                    exit;
+                }
+                
+                // Get current team info
+                $currentTeam = null;
+                if ($draft['current_pick_team_id']) {
+                    $currentTeam = $db->query('SELECT * FROM draft_teams WHERE id = ' . $draft['current_pick_team_id'])->fetchArray(SQLITE3_ASSOC);
+                }
+                
+                // Calculate time remaining
+                $timeRemaining = 0;
+                if ($draft['timer_expires_at']) {
+                    $expiresAt = new DateTime($draft['timer_expires_at']);
+                    $now = new DateTime();
+                    $diff = $expiresAt->getTimestamp() - $now->getTimestamp();
+                    $timeRemaining = max(0, $diff);
+                }
+                
+                // Get available players
+                $availablePlayers = [];
+                $playersQuery = $db->query('
+                    SELECT p.* FROM players p 
+                    WHERE p.current_year = 1 
+                    AND NOT EXISTS (SELECT 1 FROM draft_picks dp WHERE dp.player_id = p.id AND dp.draft_session_id = ' . $draft['id'] . ')
+                    ORDER BY p.name
+                ');
+                while ($player = $playersQuery->fetchArray(SQLITE3_ASSOC)) {
+                    $availablePlayers[] = $player;
+                }
+                
+                // Get all teams with their players
+                $teams = [];
+                $teamsQuery = $db->query('SELECT * FROM draft_teams WHERE draft_session_id = ' . $draft['id'] . ' ORDER BY draft_order');
+                while ($team = $teamsQuery->fetchArray(SQLITE3_ASSOC)) {
+                    // Get team players
+                    $teamPlayers = [];
+                    $playersQuery = $db->query('
+                        SELECT p.* FROM draft_picks dp 
+                        JOIN players p ON dp.player_id = p.id 
+                        WHERE dp.team_id = ' . $team['id'] . ' 
+                        ORDER BY dp.pick_number
+                    ');
+                    while ($player = $playersQuery->fetchArray(SQLITE3_ASSOC)) {
+                        $teamPlayers[] = $player;
+                    }
+                    
+                    $team['players'] = $teamPlayers;
+                    $teams[] = $team;
+                }
+                
+                // Calculate current pick info
+                $pickCount = $db->query('SELECT COUNT(*) as count FROM draft_picks WHERE draft_session_id = ' . $draft['id'])->fetchArray(SQLITE3_ASSOC);
+                $pickNumber = $pickCount['count'] + 1;
+                $round = ceil($pickNumber / $draft['num_teams']);
+                
+                echo json_encode([
+                    'success' => true,
+                    'currentTeam' => $currentTeam,
+                    'currentTeamId' => $draft['current_pick_team_id'],
+                    'round' => $round,
+                    'pickNumber' => $pickNumber,
+                    'timeRemaining' => $timeRemaining,
+                    'availablePlayers' => $availablePlayers,
+                    'teams' => $teams
+                ]);
+                exit;
+                break;
+                
+            case 'transfer_player':
+                requireAdmin();
+                header('Content-Type: application/json');
+                
+                $draftPickId = filter_var($_POST['draft_pick_id'] ?? '', FILTER_VALIDATE_INT);
+                $newTeamId = filter_var($_POST['new_team_id'] ?? '', FILTER_VALIDATE_INT);
+                
+                if (!$draftPickId || !$newTeamId) {
+                    echo json_encode(['success' => false, 'error' => 'Invalid parameters']);
+                    exit;
+                }
+                
+                // Verify the draft pick exists and get current info
+                $checkQuery = $db->prepare('SELECT * FROM draft_picks WHERE id = ?');
+                $checkQuery->bindValue(1, $draftPickId);
+                $checkResult = $checkQuery->execute();
+                $draftPick = $checkResult->fetchArray(SQLITE3_ASSOC);
+                
+                if (!$draftPick) {
+                    echo json_encode(['success' => false, 'error' => 'Draft pick not found']);
+                    exit;
+                }
+                
+                // Verify the target team exists
+                $teamCheckQuery = $db->prepare('SELECT * FROM draft_teams WHERE id = ?');
+                $teamCheckQuery->bindValue(1, $newTeamId);
+                $teamCheckResult = $teamCheckQuery->execute();
+                $targetTeam = $teamCheckResult->fetchArray(SQLITE3_ASSOC);
+                
+                if (!$targetTeam) {
+                    echo json_encode(['success' => false, 'error' => 'Target team not found']);
+                    exit;
+                }
+                
+                // Update the draft pick to assign player to new team
+                $updateQuery = $db->prepare('UPDATE draft_picks SET team_id = ? WHERE id = ?');
+                $updateQuery->bindValue(1, $newTeamId);
+                $updateQuery->bindValue(2, $draftPickId);
+                
+                if ($updateQuery->execute()) {
+                    echo json_encode(['success' => true]);
+                } else {
+                    echo json_encode(['success' => false, 'error' => 'Database update failed']);
+                }
+                exit;
+                break;
+                
+            case 'update_team':
+                requireAdmin();
+                header('Content-Type: application/json');
+                
+                $teamId = filter_var($_POST['team_id'] ?? '', FILTER_VALIDATE_INT);
+                $teamName = trim($_POST['team_name'] ?? '');
+                $teamColor = trim($_POST['team_color'] ?? '');
+                
+                if (!$teamId || !$teamName || !$teamColor) {
+                    echo json_encode(['success' => false, 'error' => 'Invalid parameters']);
+                    exit;
+                }
+                
+                // Validate color format (hex color)
+                if (!preg_match('/^#[a-fA-F0-9]{6}$/', $teamColor)) {
+                    echo json_encode(['success' => false, 'error' => 'Invalid color format']);
+                    exit;
+                }
+                
+                // Verify team exists
+                $checkQuery = $db->prepare('SELECT * FROM draft_teams WHERE id = ?');
+                $checkQuery->bindValue(1, $teamId);
+                $checkResult = $checkQuery->execute();
+                $team = $checkResult->fetchArray(SQLITE3_ASSOC);
+                
+                if (!$team) {
+                    echo json_encode(['success' => false, 'error' => 'Team not found']);
+                    exit;
+                }
+                
+                // Update the team
+                $updateQuery = $db->prepare('UPDATE draft_teams SET team_name = ?, team_color = ? WHERE id = ?');
+                $updateQuery->bindValue(1, $teamName);
+                $updateQuery->bindValue(2, $teamColor);
+                $updateQuery->bindValue(3, $teamId);
+                
+                if ($updateQuery->execute()) {
+                    echo json_encode(['success' => true]);
+                } else {
+                    echo json_encode(['success' => false, 'error' => 'Database update failed']);
+                }
                 exit;
                 break;
         }
@@ -1074,6 +1558,372 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                 justify-content: center;
             }
         }
+        
+        /* Draft System Styles */
+        .draft-teams-preview {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .team-preview {
+            padding: 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
+        }
+        
+        #draft-interface {
+            max-width: 100%;
+            margin: 0 auto;
+        }
+        
+        .draft-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .draft-status {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 30px;
+            margin-top: 15px;
+        }
+        
+        .current-pick-info {
+            background: linear-gradient(135deg, var(--navy-base) 0%, rgba(26,35,50,0.9) 100%);
+            border: 2px solid var(--gold-accent);
+            border-radius: 8px;
+            padding: 10px 20px;
+            color: var(--gold-accent);
+            font-weight: bold;
+        }
+        
+        .draft-timer {
+            background: linear-gradient(135deg, #ff6600 0%, #cc5500 100%);
+            border: 3px solid var(--gold-accent);
+            border-radius: 50%;
+            width: 80px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 20px rgba(255,102,0,0.5);
+        }
+        
+        #timer-display {
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        .draft-main {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 30px;
+            margin-top: 30px;
+        }
+        
+        .draft-board {
+            background: linear-gradient(135deg, var(--navy-base) 0%, rgba(26,35,50,0.9) 100%);
+            border: 2px solid var(--metallic-silver);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 8px rgba(0,0,0,0.3);
+        }
+        
+        .player-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .draft-player-card {
+            background: linear-gradient(135deg, var(--dark-gray) 0%, #2a2a2a 100%);
+            border: 2px solid var(--metallic-silver);
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .draft-player-card:hover {
+            border-color: var(--brand-orange);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 16px rgba(255,102,0,0.3);
+        }
+        
+        .draft-player-card.current-turn {
+            border-color: var(--gold-accent);
+            box-shadow: 0 0 15px var(--gold-accent);
+            animation: pulse 2s infinite;
+        }
+        
+        .draft-player-photo {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin: 0 auto 10px;
+            border: 2px solid var(--brand-orange);
+        }
+        
+        .draft-player-placeholder {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: var(--dark-gray);
+            border: 2px solid var(--metallic-silver);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 10px;
+            font-size: 20px;
+        }
+        
+        .draft-teams {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .team-roster-card {
+            background: linear-gradient(135deg, var(--navy-base) 0%, rgba(26,35,50,0.9) 100%);
+            border: 2px solid var(--metallic-silver);
+            border-radius: 8px;
+            padding: 15px;
+            position: relative;
+        }
+        
+        .team-roster-card.current-pick {
+            border-color: var(--gold-accent);
+            box-shadow: 0 0 15px rgba(255,215,0,0.3);
+        }
+        
+        .team-roster-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--metallic-silver);
+        }
+        
+        .team-roster-players {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-height: 100px;
+        }
+        
+        .roster-player-mini {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 4px;
+        }
+        
+        .roster-player-mini img {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        
+        .roster-placeholder {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: var(--dark-gray);
+            border: 1px solid var(--metallic-silver);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+        
+        .teams-display {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .team-card {
+            background: linear-gradient(135deg, var(--navy-base) 0%, rgba(26,35,50,0.9) 100%);
+            border: 2px solid var(--metallic-silver);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 8px rgba(0,0,0,0.3);
+        }
+        
+        .team-header {
+            text-align: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid var(--metallic-silver);
+        }
+        
+        .captain-badge {
+            margin: 10px 0;
+        }
+        
+        .team-roster .roster-player {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(192,192,192,0.2);
+        }
+        
+        .team-roster .roster-player:last-child {
+            border-bottom: none;
+        }
+        
+        .roster-player .player-photo {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--brand-orange);
+        }
+        
+        .roster-player .player-photo-placeholder {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: var(--dark-gray);
+            border: 2px solid var(--metallic-silver);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        @media (max-width: 768px) {
+            .draft-main {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .draft-status {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .player-grid {
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                gap: 10px;
+            }
+            
+            .teams-display {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* Team Management Styles */
+        .team-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .team-title-section {
+            position: relative;
+        }
+        
+        .team-edit-form {
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid var(--bright-orange);
+        }
+        
+        .team-edit-form .form-input {
+            width: 100%;
+            max-width: 200px;
+        }
+        
+        .team-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .btn-sm {
+            padding: 8px 12px;
+            font-size: 0.8rem;
+        }
+        
+        /* Drag and Drop Styles */
+        .draggable-player {
+            cursor: grab;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+        
+        .draggable-player:hover {
+            background: rgba(255,102,0,0.1);
+            transform: translateX(5px);
+        }
+        
+        .draggable-player[draggable="true"] .drag-handle {
+            opacity: 1;
+        }
+        
+        .draggable-player:active {
+            cursor: grabbing;
+        }
+        
+        .team-roster.drop-zone {
+            min-height: 100px;
+            border: 2px dashed transparent;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .team-roster.drop-zone.drag-over {
+            border-color: var(--bright-orange);
+            background: rgba(255,102,0,0.1);
+            transform: scale(1.02);
+        }
+        
+        .drag-handle {
+            font-size: 1.2rem;
+            opacity: 0.5;
+            transition: opacity 0.2s ease;
+        }
+        
+        .drag-handle:hover {
+            opacity: 1;
+            color: var(--bright-orange);
+        }
+        
+        .edit-team-btn:hover {
+            background: var(--gold-accent) !important;
+            transform: scale(1.05);
+        }
+        
+        /* Success/Error message styles */
+        .temp-message {
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1108,9 +1958,6 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                         <a href="?page=teams" class="nav-link <?= $page === 'teams' ? 'active' : '' ?>">Teams</a>
                     </li>
                     <?php if (isLoggedIn()): ?>
-                        <li class="nav-item">
-                            <a href="?page=draft" class="nav-link <?= $page === 'draft' ? 'active' : '' ?>">Draft</a>
-                        </li>
                         <li class="nav-item">
                             <a href="?page=admin" class="nav-link <?= $page === 'admin' ? 'active' : '' ?>">Admin</a>
                         </li>
@@ -1292,11 +2139,28 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                     break;
                     
                 case 'roster':
+                    $currentYear = $eventSettings['current_year'] ?? date('Y');
+                    
                     // Get current year players
                     $players = $db->query('SELECT * FROM players WHERE current_year = 1 ORDER BY name');
                     
+                    // Get captain IDs from completed drafts for this year
+                    $captainIds = [];
+                    $captainTeams = [];
+                    $completedDraft = $db->query('SELECT * FROM draft_sessions WHERE year = ' . $currentYear . ' AND status = "completed" ORDER BY created_at DESC LIMIT 1')->fetchArray(SQLITE3_ASSOC);
+                    if ($completedDraft) {
+                        $captainsQuery = $db->query('SELECT captain_player_id, team_name, team_color FROM draft_teams WHERE draft_session_id = ' . $completedDraft['id'] . ' AND captain_player_id IS NOT NULL');
+                        while ($captain = $captainsQuery->fetchArray(SQLITE3_ASSOC)) {
+                            $captainIds[] = $captain['captain_player_id'];
+                            $captainTeams[$captain['captain_player_id']] = [
+                                'team_name' => $captain['team_name'],
+                                'team_color' => $captain['team_color']
+                            ];
+                        }
+                    }
+                    
                     echo '<div class="card">
-                        <h1 class="card-title">2024 Turkey Bowl Roster</h1>
+                        <h1 class="card-title">' . $currentYear . ' Turkey Bowl Roster</h1>
                         <p>Meet this year\'s warriors ready to battle for flag football supremacy!</p>
                     </div>';
                     
@@ -1306,17 +2170,37 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                     while ($player = $players->fetchArray(SQLITE3_ASSOC)) {
                         $hasPlayers = true;
                         $photoPath = $player['photo_path'] ? htmlspecialchars($player['photo_path']) : 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=';
+                        $isCaptain = in_array($player['id'], $captainIds);
+                        $captainInfo = $isCaptain ? $captainTeams[$player['id']] : null;
                         
-                        echo '<div class="card" style="background: linear-gradient(145deg, #2a2a2a 0%, #1a1a1a 100%); border: 2px solid var(--bright-orange); transition: all 0.3s ease;" onmouseover="this.style.transform=\'translateY(-5px)\'" onmouseout="this.style.transform=\'translateY(0)\'">
-                                <div style="text-align: center;">
-                                    <div style="width: 120px; height: 120px; margin: 0 auto 15px; border-radius: 50%; overflow: hidden; border: 3px solid var(--gold-accent); background: var(--dark-gray);">
+                        $cardBorder = $isCaptain ? $captainInfo['team_color'] : 'var(--bright-orange)';
+                        $photoBorder = $isCaptain ? $captainInfo['team_color'] : 'var(--gold-accent)';
+                        
+                        echo '<div class="card" style="background: linear-gradient(145deg, #2a2a2a 0%, #1a1a1a 100%); border: 2px solid ' . $cardBorder . '; transition: all 0.3s ease; position: relative;" onmouseover="this.style.transform=\'translateY(-5px)\'" onmouseout="this.style.transform=\'translateY(0)\'">
+                                <div style="text-align: center;">';
+                        
+                        // Captain badge
+                        if ($isCaptain) {
+                            echo '<div style="position: absolute; top: -8px; left: 50%; transform: translateX(-50%); background: linear-gradient(145deg, ' . $captainInfo['team_color'] . ' 0%, ' . $captainInfo['team_color'] . '80 100%); color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; border: 2px solid var(--gold-accent); box-shadow: 0 2px 8px rgba(0,0,0,0.3); z-index: 10;">
+                                    ⭐ CAPTAIN ⭐
+                                  </div>';
+                        }
+                        
+                        echo '<div style="width: 120px; height: 120px; margin: 0 auto 15px; border-radius: 50%; overflow: hidden; border: 3px solid ' . $photoBorder . '; background: var(--dark-gray); position: relative;">
                                         <img src="' . $photoPath . '" alt="' . htmlspecialchars($player['name']) . '" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src=\'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=\'">
                                     </div>
                                     
-                                    <h3 style="color: var(--bright-orange); font-size: 1.3rem; margin-bottom: 5px;">' . htmlspecialchars($player['name']) . '</h3>';
+                                    <h3 style="color: ' . ($isCaptain ? $captainInfo['team_color'] : 'var(--bright-orange)') . '; font-size: 1.3rem; margin-bottom: 5px;">' . htmlspecialchars($player['name']) . '</h3>';
                         
                         if ($player['nickname']) {
                             echo '<p style="color: var(--gold-accent); font-style: italic; margin-bottom: 10px;">"' . htmlspecialchars($player['nickname']) . '"</p>';
+                        }
+                        
+                        // Show team name for captains
+                        if ($isCaptain) {
+                            echo '<div style="background: linear-gradient(145deg, ' . $captainInfo['team_color'] . '20, ' . $captainInfo['team_color'] . '10); padding: 6px 12px; border-radius: 20px; margin: 10px auto; display: inline-block; border: 1px solid ' . $captainInfo['team_color'] . ';">
+                                    <span style="color: ' . $captainInfo['team_color'] . '; font-weight: bold; font-size: 0.85rem; text-transform: uppercase;">' . htmlspecialchars($captainInfo['team_name']) . '</span>
+                                  </div>';
                         }
                         
                         echo '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; text-align: left;">
@@ -1351,86 +2235,159 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                     break;
                     
                 case 'teams':
-                    // Get current year teams and their players
                     $currentYear = $eventSettings['current_year'] ?? date('Y');
-                    $teams = $db->query("SELECT * FROM teams WHERE year = $currentYear ORDER BY name");
                     
                     echo '<div class="card">
-                        <h1 class="card-title">2024 Team Lineups</h1>
+                        <h1 class="card-title">' . $currentYear . ' Team Lineups</h1>
                         <p>Check out this year\'s team rosters and prepare for battle!</p>
                     </div>';
                     
                     $hasTeams = false;
-                    while ($team = $teams->fetchArray(SQLITE3_ASSOC)) {
-                        $hasTeams = true;
-                        
-                        // Get team players
-                        $teamPlayersQuery = $db->prepare('
-                            SELECT p.* FROM players p 
-                            JOIN team_players tp ON p.id = tp.player_id 
-                            WHERE tp.team_id = ? 
-                            ORDER BY tp.draft_order, p.name
+                    
+                    // First check for completed draft teams
+                    $completedDraft = $db->query('SELECT * FROM draft_sessions WHERE year = ' . $currentYear . ' AND status = "completed" ORDER BY created_at DESC LIMIT 1')->fetchArray(SQLITE3_ASSOC);
+                    
+                    if ($completedDraft) {
+                        // Display draft teams
+                        $draftTeamsQuery = $db->query('
+                            SELECT dt.*, p.name as captain_name, COUNT(dp.id) as player_count
+                            FROM draft_teams dt 
+                            LEFT JOIN players p ON dt.captain_player_id = p.id 
+                            LEFT JOIN draft_picks dp ON dt.id = dp.team_id 
+                            WHERE dt.draft_session_id = ' . $completedDraft['id'] . ' 
+                            GROUP BY dt.id 
+                            ORDER BY dt.draft_order
                         ');
-                        $teamPlayersQuery->bindValue(1, $team['id']);
-                        $teamPlayers = $teamPlayersQuery->execute();
                         
-                        // Get captain info
-                        $captain = null;
-                        if ($team['captain_id']) {
-                            $captainQuery = $db->prepare('SELECT name FROM players WHERE id = ?');
-                            $captainQuery->bindValue(1, $team['captain_id']);
-                            $captainResult = $captainQuery->execute();
-                            $captain = $captainResult->fetchArray(SQLITE3_ASSOC);
-                        }
-                        
-                        echo '<div class="card" style="border: 3px solid var(--bright-orange);">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                                    <h2 style="color: var(--gold-accent); font-size: 2rem; margin: 0;">' . htmlspecialchars($team['name']) . '</h2>';
-                        
-                        if ($team['logo_path']) {
-                            echo '<div style="width: 60px; height: 60px; border-radius: 50%; overflow: hidden; border: 2px solid var(--gold-accent);">
-                                    <img src="' . htmlspecialchars($team['logo_path']) . '" alt="Team Logo" style="width: 100%; height: 100%; object-fit: cover;">
-                                  </div>';
-                        }
-                        
-                        echo '</div>';
-                        
-                        if ($captain) {
-                            echo '<p style="color: var(--bright-orange); margin-bottom: 15px;">
-                                    <strong>Captain:</strong> ' . htmlspecialchars($captain['name']) . '
-                                  </p>';
-                        }
-                        
-                        echo '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">';
-                        
-                        $playerCount = 0;
-                        while ($player = $teamPlayers->fetchArray(SQLITE3_ASSOC)) {
-                            $playerCount++;
-                            $photoPath = $player['photo_path'] ? htmlspecialchars($player['photo_path']) : 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=';
+                        while ($team = $draftTeamsQuery->fetchArray(SQLITE3_ASSOC)) {
+                            $hasTeams = true;
                             
-                            echo '<div style="background: rgba(255,102,0,0.1); border: 1px solid var(--metallic-silver); border-radius: 6px; padding: 15px; text-align: center;">
-                                    <div style="width: 60px; height: 60px; margin: 0 auto 10px; border-radius: 50%; overflow: hidden; border: 2px solid var(--bright-orange);">
-                                        <img src="' . $photoPath . '" alt="' . htmlspecialchars($player['name']) . '" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src=\'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=\'">
-                                    </div>
-                                    <h4 style="color: var(--pure-white); margin: 0 0 5px 0;">' . htmlspecialchars($player['name']) . '</h4>
-                                    <p style="color: var(--metallic-silver); font-size: 0.8rem; margin: 0;">' . htmlspecialchars($player['position'] ?: 'Utility') . '</p>
-                                  </div>';
+                            // Get team players from draft picks
+                            $teamPlayersQuery = $db->query('
+                                SELECT p.* FROM draft_picks dp 
+                                JOIN players p ON dp.player_id = p.id 
+                                WHERE dp.team_id = ' . $team['id'] . ' 
+                                ORDER BY dp.pick_number
+                            ');
+                            
+                            echo '<div class="card" style="border: 3px solid ' . htmlspecialchars($team['team_color']) . ';">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                        <h2 style="color: var(--gold-accent); font-size: 2rem; margin: 0;">' . htmlspecialchars($team['team_name']) . '</h2>
+                                        <div style="background: ' . htmlspecialchars($team['team_color']) . '; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 1.2rem;">
+                                            #' . $team['draft_order'] . '
+                                        </div>
+                                    </div>';
+                            
+                            if ($team['captain_name']) {
+                                echo '<p style="color: var(--bright-orange); margin-bottom: 15px;">
+                                        <strong>Captain:</strong> ' . htmlspecialchars($team['captain_name']) . '
+                                      </p>';
+                            }
+                            
+                            echo '<p style="color: var(--metallic-silver); margin-bottom: 20px;">
+                                    <strong>Players:</strong> ' . $team['player_count'] . '
+                                  </p>';
+                            
+                            echo '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">';
+                            
+                            $playerCount = 0;
+                            while ($player = $teamPlayersQuery->fetchArray(SQLITE3_ASSOC)) {
+                                $playerCount++;
+                                $photoPath = $player['photo_path'] ? htmlspecialchars($player['photo_path']) : 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=';
+                                
+                                echo '<div style="background: rgba(255,102,0,0.1); border: 1px solid ' . htmlspecialchars($team['team_color']) . '; border-radius: 6px; padding: 15px; text-align: center;">
+                                        <div style="width: 60px; height: 60px; margin: 0 auto 10px; border-radius: 50%; overflow: hidden; border: 2px solid ' . htmlspecialchars($team['team_color']) . ';">
+                                            <img src="' . $photoPath . '" alt="' . htmlspecialchars($player['name']) . '" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src=\'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=\'">
+                                        </div>
+                                        <h4 style="color: var(--pure-white); margin: 0 0 5px 0;">' . htmlspecialchars($player['name']) . '</h4>
+                                        <p style="color: var(--metallic-silver); font-size: 0.8rem; margin: 0;">' . htmlspecialchars($player['position'] ?: 'Utility') . '</p>
+                                      </div>';
+                            }
+                            
+                            if ($playerCount === 0) {
+                                echo '<div style="grid-column: 1 / -1; text-align: center; color: var(--metallic-silver); padding: 20px;">
+                                        <p>No players drafted yet.</p>
+                                      </div>';
+                            }
+                            
+                            echo '</div>
+                                </div>';
                         }
+                    } else {
+                        // Fallback to regular teams table if no completed draft
+                        $teams = $db->query("SELECT * FROM teams WHERE year = $currentYear ORDER BY name");
                         
-                        if ($playerCount === 0) {
-                            echo '<div style="grid-column: 1 / -1; text-align: center; color: var(--metallic-silver); padding: 20px;">
-                                    <p>No players drafted yet.</p>
-                                  </div>';
+                        while ($team = $teams->fetchArray(SQLITE3_ASSOC)) {
+                            $hasTeams = true;
+                            
+                            // Get team players
+                            $teamPlayersQuery = $db->prepare('
+                                SELECT p.* FROM players p 
+                                JOIN team_players tp ON p.id = tp.player_id 
+                                WHERE tp.team_id = ? 
+                                ORDER BY tp.draft_order, p.name
+                            ');
+                            $teamPlayersQuery->bindValue(1, $team['id']);
+                            $teamPlayers = $teamPlayersQuery->execute();
+                            
+                            // Get captain info
+                            $captain = null;
+                            if ($team['captain_id']) {
+                                $captainQuery = $db->prepare('SELECT name FROM players WHERE id = ?');
+                                $captainQuery->bindValue(1, $team['captain_id']);
+                                $captainResult = $captainQuery->execute();
+                                $captain = $captainResult->fetchArray(SQLITE3_ASSOC);
+                            }
+                            
+                            echo '<div class="card" style="border: 3px solid var(--bright-orange);">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                        <h2 style="color: var(--gold-accent); font-size: 2rem; margin: 0;">' . htmlspecialchars($team['name']) . '</h2>';
+                            
+                            if ($team['logo_path']) {
+                                echo '<div style="width: 60px; height: 60px; border-radius: 50%; overflow: hidden; border: 2px solid var(--gold-accent);">
+                                        <img src="' . htmlspecialchars($team['logo_path']) . '" alt="Team Logo" style="width: 100%; height: 100%; object-fit: cover;">
+                                      </div>';
+                            }
+                            
+                            echo '</div>';
+                            
+                            if ($captain) {
+                                echo '<p style="color: var(--bright-orange); margin-bottom: 15px;">
+                                        <strong>Captain:</strong> ' . htmlspecialchars($captain['name']) . '
+                                      </p>';
+                            }
+                            
+                            echo '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">';
+                            
+                            $playerCount = 0;
+                            while ($player = $teamPlayers->fetchArray(SQLITE3_ASSOC)) {
+                                $playerCount++;
+                                $photoPath = $player['photo_path'] ? htmlspecialchars($player['photo_path']) : 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=';
+                                
+                                echo '<div style="background: rgba(255,102,0,0.1); border: 1px solid var(--metallic-silver); border-radius: 6px; padding: 15px; text-align: center;">
+                                        <div style="width: 60px; height: 60px; margin: 0 auto 10px; border-radius: 50%; overflow: hidden; border: 2px solid var(--bright-orange);">
+                                            <img src="' . $photoPath . '" alt="' . htmlspecialchars($player['name']) . '" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src=\'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=\'">
+                                        </div>
+                                        <h4 style="color: var(--pure-white); margin: 0 0 5px 0;">' . htmlspecialchars($player['name']) . '</h4>
+                                        <p style="color: var(--metallic-silver); font-size: 0.8rem; margin: 0.">' . htmlspecialchars($player['position'] ?: 'Utility') . '</p>
+                                      </div>';
+                            }
+                            
+                            if ($playerCount === 0) {
+                                echo '<div style="grid-column: 1 / -1; text-align: center; color: var(--metallic-silver); padding: 20px;">
+                                        <p>No players drafted yet.</p>
+                                      </div>';
+                            }
+                            
+                            echo '</div>
+                                </div>';
                         }
-                        
-                        echo '</div>
-                            </div>';
                     }
                     
                     if (!$hasTeams) {
                         echo '<div class="card" style="text-align: center;">
                                 <h2 style="color: var(--metallic-silver);">No Teams Created Yet</h2>
-                                <p>Teams will appear here after the draft begins.</p>
+                                <p>Teams will appear here after the draft is completed.</p>
                               </div>';
                     }
                     break;
@@ -1487,6 +2444,8 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                         <div class="tab-nav">
                             <button class="tab-button ' . ($currentTab === 'event' ? 'active' : '') . '" onclick="switchTab(\'event\')">Event Settings</button>
                             <button class="tab-button ' . ($currentTab === 'players' ? 'active' : '') . '" onclick="switchTab(\'players\')">Players</button>
+                            <button class="tab-button ' . ($currentTab === 'draft' ? 'active' : '') . '" onclick="switchTab(\'draft\')">Draft</button>
+                            <button class="tab-button ' . ($currentTab === 'teams' ? 'active' : '') . '" onclick="switchTab(\'teams\')">Teams</button>
                             <button class="tab-button ' . ($currentTab === 'championships' ? 'active' : '') . '" onclick="switchTab(\'championships\')">Championships</button>
                             <button class="tab-button ' . ($currentTab === 'awards' ? 'active' : '') . '" onclick="switchTab(\'awards\')">Awards</button>
                             <button class="tab-button ' . ($currentTab === 'records' ? 'active' : '') . '" onclick="switchTab(\'records\')">Records</button>
@@ -1813,6 +2772,210 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                         </div>
                     </div>';
                     
+                    // Draft Tab
+                    echo '<div id="draft" class="tab-content ' . ($currentTab === 'draft' ? 'active' : '') . '">';
+                    
+                    // Get current draft session
+                    $currentDraft = $db->query('SELECT * FROM draft_sessions WHERE status != "completed" ORDER BY created_at DESC LIMIT 1')->fetchArray(SQLITE3_ASSOC);
+                    
+                    if (!$currentDraft) {
+                        // No active draft - show setup
+                        echo '<div class="card">
+                            <h3 style="color: var(--gold-accent); margin-bottom: 20px;">Draft Setup</h3>
+                            <div class="admin-form">
+                                <form method="POST" id="draft-setup-form">
+                                    <input type="hidden" name="action" value="setup_draft">
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label class="form-label">Number of Teams:</label>
+                                            <select name="num_teams" class="form-input" required>
+                                                <option value="">Select Teams...</option>
+                                                <option value="2">2 Teams</option>
+                                                <option value="3">3 Teams</option>
+                                                <option value="4">4 Teams</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Draft Year:</label>
+                                            <input type="number" name="draft_year" class="form-input" value="' . (date('Y')) . '" min="2020" max="2030" required>
+                                        </div>
+                                    </div>
+                                    <div id="team-captains-container" style="display: none;">
+                                        <h4 style="color: var(--metallic-silver); margin: 20px 0 10px 0;">Select Team Captains</h4>
+                                        <div id="captain-selects"></div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary" id="setup-draft-btn">Setup Draft</button>
+                                </form>
+                            </div>
+                        </div>';
+                    } else if ($currentDraft['status'] === 'setup') {
+                        // Draft is set up but not started
+                        $draftTeams = $db->query('SELECT dt.*, p.name as captain_name FROM draft_teams dt LEFT JOIN players p ON dt.captain_player_id = p.id WHERE dt.draft_session_id = ' . $currentDraft['id'] . ' ORDER BY dt.draft_order');
+                        
+                        echo '<div class="card">
+                            <h3 style="color: var(--gold-accent); margin-bottom: 20px;">Ready to Draft - ' . $currentDraft['num_teams'] . ' Teams</h3>
+                            <div class="draft-teams-preview">';
+                        
+                        while ($team = $draftTeams->fetchArray(SQLITE3_ASSOC)) {
+                            echo '<div class="team-preview" style="background: ' . $team['team_color'] . '20; border-left: 4px solid ' . $team['team_color'] . ';">
+                                <h4 style="color: ' . $team['team_color'] . ';">' . htmlspecialchars($team['team_name']) . '</h4>
+                                <p style="color: var(--metallic-silver);">Captain: ' . htmlspecialchars($team['captain_name']) . '</p>
+                                <p style="color: var(--metallic-silver);">Draft Order: #' . $team['draft_order'] . '</p>
+                            </div>';
+                        }
+                        
+                        echo '</div>
+                            <div style="margin-top: 20px;">
+                                <form method="POST" style="display: inline-block; margin-right: 10px;">
+                                    <input type="hidden" name="action" value="start_draft">
+                                    <input type="hidden" name="draft_session_id" value="' . $currentDraft['id'] . '">
+                                    <button type="submit" class="btn btn-primary btn-large">🏈 Start Draft!</button>
+                                </form>
+                                <form method="POST" style="display: inline-block;">
+                                    <input type="hidden" name="action" value="reset_draft">
+                                    <input type="hidden" name="draft_session_id" value="' . $currentDraft['id'] . '">
+                                    <button type="submit" class="btn btn-secondary" onclick="return confirm(\'Are you sure you want to reset this draft?\')">Reset Draft</button>
+                                </form>
+                            </div>
+                        </div>';
+                    } else if ($currentDraft['status'] === 'active') {
+                        // Active draft interface
+                        echo '<div id="draft-interface">
+                            <div class="draft-header">
+                                <h2 style="color: var(--gold-accent); text-align: center; margin-bottom: 10px;">TURKEY BOWL DRAFT ' . $currentDraft['year'] . '</h2>
+                                <div class="draft-status">
+                                    <div class="current-pick-info">
+                                        <span id="current-pick-text">Loading...</span>
+                                    </div>
+                                    <div class="draft-timer">
+                                        <div id="timer-display">30</div>
+                                    </div>
+                                </div>
+                                <div style="text-align: center; margin-top: 15px;">
+                                    <form method="POST" style="display: inline-block;">
+                                        <input type="hidden" name="action" value="end_draft">
+                                        <input type="hidden" name="draft_session_id" value="' . $currentDraft['id'] . '">
+                                        <button type="submit" class="btn btn-secondary" onclick="return confirm(\'Are you sure you want to end the draft early? This will finalize all teams as they are.\')">End Draft</button>
+                                    </form>
+                                </div>
+                            </div>
+                            
+                            <div class="draft-main">
+                                <div class="draft-board">
+                                    <h3 style="color: var(--metallic-silver); margin-bottom: 15px;">Available Players</h3>
+                                    <div id="available-players" class="player-grid">
+                                        <!-- Players populated by JavaScript -->
+                                    </div>
+                                </div>
+                                
+                                <div class="draft-teams">
+                                    <div id="team-rosters">
+                                        <!-- Team rosters populated by JavaScript -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>';
+                    }
+                    
+                    echo '</div>';
+                    
+                    // Teams Tab
+                    echo '<div id="teams" class="tab-content ' . ($currentTab === 'teams' ? 'active' : '') . '">';
+                    
+                    // Get completed draft teams
+                    $completedDraft = $db->query('SELECT * FROM draft_sessions WHERE status = "completed" ORDER BY created_at DESC LIMIT 1')->fetchArray(SQLITE3_ASSOC);
+                    
+                    if ($completedDraft) {
+                        $draftTeams = $db->query('
+                            SELECT dt.*, p.name as captain_name, COUNT(dp.id) as player_count 
+                            FROM draft_teams dt 
+                            LEFT JOIN players p ON dt.captain_player_id = p.id 
+                            LEFT JOIN draft_picks dp ON dt.id = dp.team_id 
+                            WHERE dt.draft_session_id = ' . $completedDraft['id'] . ' 
+                            GROUP BY dt.id 
+                            ORDER BY dt.draft_order
+                        ');
+                        
+                        echo '<div class="card">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                <h3 style="color: var(--gold-accent); margin: 0;">Team Management - ' . $completedDraft['year'] . '</h3>
+                                <div class="team-controls">
+                                    <button onclick="toggleEditMode()" id="edit-mode-btn" class="btn btn-secondary">
+                                        📝 Edit Teams
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="teams-display" id="teams-display">';
+                        
+                        while ($team = $draftTeams->fetchArray(SQLITE3_ASSOC)) {
+                            echo '<div class="team-card editable-team" data-team-id="' . $team['id'] . '" style="border-top: 4px solid ' . $team['team_color'] . ';">
+                                <div class="team-header">
+                                    <div class="team-title-section">
+                                        <h4 class="team-name-display" style="color: ' . $team['team_color'] . ';">' . htmlspecialchars($team['team_name']) . '</h4>
+                                        <div class="team-edit-form" style="display: none;">
+                                            <input type="text" class="team-name-input form-input" value="' . htmlspecialchars($team['team_name']) . '" style="margin-bottom: 10px;">
+                                            <input type="color" class="team-color-input" value="' . $team['team_color'] . '" style="margin-bottom: 10px; height: 40px; border: none; border-radius: 4px; width: 100px;">
+                                            <div class="team-buttons">
+                                                <button onclick="saveTeam(' . $team['id'] . ')" class="btn btn-primary btn-sm">💾 Save</button>
+                                                <button onclick="cancelTeamEdit(' . $team['id'] . ')" class="btn btn-secondary btn-sm">❌ Cancel</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="captain-badge">
+                                        <span style="color: var(--gold-accent);">👑 Captain: ' . htmlspecialchars($team['captain_name']) . '</span>
+                                    </div>
+                                    <div class="team-stats">
+                                        <span style="color: var(--metallic-silver);">' . $team['player_count'] . ' Players</span>
+                                        <button onclick="editTeam(' . $team['id'] . ')" class="edit-team-btn" style="display: none; margin-left: 10px; background: var(--bright-orange); color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">✏️ Edit</button>
+                                    </div>
+                                </div>
+                                <div class="team-roster" id="team-' . $team['id'] . '-roster">';
+                            
+                            // Get team players
+                            $teamPlayers = $db->query('
+                                SELECT p.*, dp.position_type, dp.round, dp.pick_number, dp.id as draft_pick_id 
+                                FROM draft_picks dp 
+                                JOIN players p ON dp.player_id = p.id 
+                                WHERE dp.team_id = ' . $team['id'] . ' 
+                                ORDER BY dp.pick_number
+                            ');
+                            
+                            while ($player = $teamPlayers->fetchArray(SQLITE3_ASSOC)) {
+                                $isCaptain = $player['id'] == $team['captain_player_id'];
+                                $captainIcon = $isCaptain ? '👑 ' : '';
+                                
+                                echo '<div class="roster-player draggable-player" draggable="false" data-player-id="' . $player['id'] . '" data-draft-pick-id="' . $player['draft_pick_id'] . '" data-current-team="' . $team['id'] . '">
+                                    <div class="player-info">
+                                        <div class="drag-handle" style="display: none; margin-right: 10px; color: var(--metallic-silver); cursor: grab;">⋮⋮</div>
+                                        ' . ($player['photo_path'] ? '<img src="' . htmlspecialchars($player['photo_path']) . '" alt="Photo" class="player-photo">' : '<div class="player-photo-placeholder">📷</div>') . '
+                                        <div class="player-details">
+                                            <strong style="color: var(--pure-white);">' . $captainIcon . htmlspecialchars($player['name']) . '</strong>';
+                                if ($player['nickname']) {
+                                    echo '<br><small style="color: var(--gold-accent); font-style: italic;">"' . htmlspecialchars($player['nickname']) . '"</small>';
+                                }
+                                echo '<br><small style="color: var(--metallic-silver);">' . htmlspecialchars($player['position'] ?: 'Utility') . ' • Round ' . $player['round'] . ', Pick ' . $player['pick_number'] . '</small>
+                                        </div>
+                                    </div>
+                                </div>';
+                            }
+                            
+                            echo '</div>
+                            </div>';
+                        }
+                        
+                        echo '</div>
+                        </div>';
+                    } else {
+                        echo '<div class="card">
+                            <h3 style="color: var(--gold-accent); margin-bottom: 20px;">Teams</h3>
+                            <p style="color: var(--metallic-silver); text-align: center; padding: 40px;">
+                                No teams available yet. Complete a draft to see teams here.
+                            </p>
+                        </div>';
+                    }
+                    
+                    echo '</div>';
+                    
                     echo '</div>'; // Close tab-container
                     break;
                     
@@ -1880,6 +3043,209 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
             const url = new URL(window.location);
             url.searchParams.set('tab', tabName);
             window.history.replaceState({}, '', url);
+        }
+
+        // Team Management Functions
+        let editModeActive = false;
+        
+        function toggleEditMode() {
+            editModeActive = !editModeActive;
+            const btn = document.getElementById('edit-mode-btn');
+            const dragHandles = document.querySelectorAll('.drag-handle');
+            const editButtons = document.querySelectorAll('.edit-team-btn');
+            const players = document.querySelectorAll('.draggable-player');
+            const teamCards = document.querySelectorAll('.team-roster');
+            
+            if (editModeActive) {
+                btn.textContent = '✅ Done Editing';
+                btn.classList.remove('btn-secondary');
+                btn.classList.add('btn-success');
+                
+                // Show drag handles and edit buttons
+                dragHandles.forEach(handle => handle.style.display = 'block');
+                editButtons.forEach(button => button.style.display = 'inline-block');
+                
+                // Enable dragging
+                players.forEach(player => {
+                    player.draggable = true;
+                    player.addEventListener('dragstart', handleDragStart);
+                    player.addEventListener('dragend', handleDragEnd);
+                });
+                
+                // Enable drop zones
+                teamCards.forEach(roster => {
+                    roster.addEventListener('dragover', handleDragOver);
+                    roster.addEventListener('drop', handleDrop);
+                    roster.classList.add('drop-zone');
+                });
+            } else {
+                btn.textContent = '📝 Edit Teams';
+                btn.classList.remove('btn-success');
+                btn.classList.add('btn-secondary');
+                
+                // Hide drag handles and edit buttons
+                dragHandles.forEach(handle => handle.style.display = 'none');
+                editButtons.forEach(button => button.style.display = 'none');
+                
+                // Disable dragging
+                players.forEach(player => {
+                    player.draggable = false;
+                    player.removeEventListener('dragstart', handleDragStart);
+                    player.removeEventListener('dragend', handleDragEnd);
+                });
+                
+                // Disable drop zones
+                teamCards.forEach(roster => {
+                    roster.removeEventListener('dragover', handleDragOver);
+                    roster.removeEventListener('drop', handleDrop);
+                    roster.classList.remove('drop-zone');
+                });
+                
+                // Hide any open edit forms
+                document.querySelectorAll('.team-edit-form').forEach(form => {
+                    form.style.display = 'none';
+                });
+                document.querySelectorAll('.team-name-display').forEach(display => {
+                    display.style.display = 'block';
+                });
+            }
+        }
+        
+        // Drag and Drop Functions
+        let draggedPlayer = null;
+        
+        function handleDragStart(e) {
+            draggedPlayer = e.target;
+            e.target.style.opacity = '0.5';
+        }
+        
+        function handleDragEnd(e) {
+            e.target.style.opacity = '1';
+            draggedPlayer = null;
+        }
+        
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.currentTarget.classList.add('drag-over');
+        }
+        
+        function handleDrop(e) {
+            e.preventDefault();
+            const dropZone = e.currentTarget;
+            dropZone.classList.remove('drag-over');
+            
+            if (!draggedPlayer) return;
+            
+            const targetTeamRoster = dropZone;
+            const targetTeamId = targetTeamRoster.id.match(/team-(\d+)-roster/)[1];
+            const currentTeamId = draggedPlayer.dataset.currentTeam;
+            
+            if (targetTeamId === currentTeamId) return; // Same team
+            
+            // Move player to new team
+            targetTeamRoster.appendChild(draggedPlayer);
+            draggedPlayer.dataset.currentTeam = targetTeamId;
+            
+            // Send update to server
+            transferPlayer(draggedPlayer.dataset.draftPickId, targetTeamId);
+        }
+        
+        function transferPlayer(draftPickId, newTeamId) {
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `action=transfer_player&draft_pick_id=${draftPickId}&new_team_id=${newTeamId}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showMessage('Player transferred successfully!', 'success');
+                    // Update team stats
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    showMessage('Error transferring player: ' + (data.error || 'Unknown error'), 'error');
+                    window.location.reload(); // Revert on error
+                }
+            })
+            .catch(error => {
+                console.error('Transfer error:', error);
+                showMessage('Transfer failed. Refreshing page...', 'error');
+                setTimeout(() => window.location.reload(), 1500);
+            });
+        }
+        
+        function editTeam(teamId) {
+            const teamCard = document.querySelector(`[data-team-id="${teamId}"]`);
+            const nameDisplay = teamCard.querySelector('.team-name-display');
+            const editForm = teamCard.querySelector('.team-edit-form');
+            
+            nameDisplay.style.display = 'none';
+            editForm.style.display = 'block';
+        }
+        
+        function cancelTeamEdit(teamId) {
+            const teamCard = document.querySelector(`[data-team-id="${teamId}"]`);
+            const nameDisplay = teamCard.querySelector('.team-name-display');
+            const editForm = teamCard.querySelector('.team-edit-form');
+            
+            nameDisplay.style.display = 'block';
+            editForm.style.display = 'none';
+        }
+        
+        function saveTeam(teamId) {
+            const teamCard = document.querySelector(`[data-team-id="${teamId}"]`);
+            const nameInput = teamCard.querySelector('.team-name-input');
+            const colorInput = teamCard.querySelector('.team-color-input');
+            
+            const newName = nameInput.value.trim();
+            const newColor = colorInput.value;
+            
+            if (!newName) {
+                showMessage('Team name cannot be empty', 'error');
+                return;
+            }
+            
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `action=update_team&team_id=${teamId}&team_name=${encodeURIComponent(newName)}&team_color=${encodeURIComponent(newColor)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showMessage('Team updated successfully!', 'success');
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    showMessage('Error updating team: ' + (data.error || 'Unknown error'), 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Update error:', error);
+                showMessage('Update failed', 'error');
+            });
+        }
+        
+        function showMessage(message, type) {
+            // Create or update message display
+            let messageDiv = document.querySelector('.temp-message');
+            if (!messageDiv) {
+                messageDiv = document.createElement('div');
+                messageDiv.className = 'temp-message';
+                messageDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; padding: 15px; border-radius: 5px; color: white; font-weight: bold; z-index: 1000; max-width: 300px;';
+                document.body.appendChild(messageDiv);
+            }
+            
+            messageDiv.textContent = message;
+            messageDiv.style.backgroundColor = type === 'success' ? 'var(--bright-orange)' : '#dc3545';
+            messageDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 3000);
         }
 
         // Player functions
@@ -2241,6 +3607,276 @@ $eventSettings = $db->query('SELECT * FROM event_settings ORDER BY id DESC LIMIT
                 document.body.appendChild(form);
                 form.submit();
             }
+        }
+        
+        // Draft System JavaScript
+        
+        // Draft setup form - captain selection
+        document.addEventListener('DOMContentLoaded', function() {
+            const numTeamsSelect = document.querySelector('select[name="num_teams"]');
+            const captainsContainer = document.getElementById('team-captains-container');
+            const captainSelects = document.getElementById('captain-selects');
+            const setupBtn = document.getElementById('setup-draft-btn');
+            
+            if (numTeamsSelect) {
+                numTeamsSelect.addEventListener('change', function() {
+                    const numTeams = parseInt(this.value);
+                    if (numTeams >= 2 && numTeams <= 4) {
+                        // Fetch active players for captain selection
+                        fetch(window.location.href + '&action=get_active_players', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            },
+                            body: 'action=get_active_players'
+                        })
+                            .then(response => response.json())
+                            .then(players => {
+                                console.log('Fetched players:', players);
+                                if (players && players.length > 0) {
+                                    generateCaptainSelects(numTeams, players);
+                                    captainsContainer.style.display = 'block';
+                                } else {
+                                    alert('No active players found. Please add some active players first.');
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error fetching players:', error);
+                                alert('Error fetching players. Please refresh and try again.');
+                            });
+                    } else {
+                        captainsContainer.style.display = 'none';
+                    }
+                });
+            }
+            
+            function generateCaptainSelects(numTeams, players) {
+                let html = '';
+                for (let i = 1; i <= numTeams; i++) {
+                    html += `
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label class="form-label">Team ${i} Captain:</label>
+                            <select name="captains[]" class="form-input" required>
+                                <option value="">Select Captain...</option>
+                                ${players.map(player => 
+                                    `<option value="${player.id}">${player.name}${player.nickname ? ' "' + player.nickname + '"' : ''}</option>`
+                                ).join('')}
+                            </select>
+                        </div>
+                    `;
+                }
+                captainSelects.innerHTML = html;
+            }
+            
+            // Initialize draft interface if active
+            if (document.getElementById('draft-interface')) {
+                initializeDraftInterface();
+            }
+        });
+        
+        // Draft interface functionality
+        function initializeDraftInterface() {
+            loadDraftState();
+            startTimer();
+            
+            // Refresh every 5 seconds to sync with other users
+            setInterval(loadDraftState, 5000);
+        }
+        
+        function loadDraftState() {
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'action=get_draft_state'
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateCurrentPickInfo(data.currentTeam, data.round, data.pickNumber);
+                        updateTimer(data.timeRemaining);
+                        updateAvailablePlayers(data.availablePlayers, data.currentTeamId);
+                        updateTeamRosters(data.teams, data.currentTeamId);
+                    } else if (data.message === 'No active draft') {
+                        // Draft has ended - redirect to Teams tab
+                        showDraftMessage('Draft completed! Redirecting to Teams...', 'success');
+                        setTimeout(() => {
+                            window.location.href = '?page=admin&tab=teams';
+                        }, 2000);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading draft state:', error);
+                });
+        }
+        
+        function updateCurrentPickInfo(team, round, pickNumber) {
+            const pickText = document.getElementById('current-pick-text');
+            if (pickText && team) {
+                pickText.textContent = `${team.team_name} - Round ${round}, Pick ${pickNumber}`;
+                pickText.style.color = team.team_color;
+            }
+        }
+        
+        function updateTimer(seconds) {
+            const timerDisplay = document.getElementById('timer-display');
+            if (timerDisplay) {
+                timerDisplay.textContent = Math.max(0, seconds);
+                
+                // Change color based on time remaining
+                if (seconds <= 10) {
+                    timerDisplay.style.color = '#ff0000';
+                } else if (seconds <= 20) {
+                    timerDisplay.style.color = '#ffaa00';
+                } else {
+                    timerDisplay.style.color = 'white';
+                }
+            }
+        }
+        
+        function startTimer() {
+            setInterval(function() {
+                const timerDisplay = document.getElementById('timer-display');
+                if (timerDisplay) {
+                    let currentTime = parseInt(timerDisplay.textContent);
+                    if (currentTime > 0) {
+                        updateTimer(currentTime - 1);
+                    }
+                }
+            }, 1000);
+        }
+        
+        function updateAvailablePlayers(players, currentTeamId) {
+            const playersGrid = document.getElementById('available-players');
+            if (!playersGrid) return;
+            
+            let html = '';
+            players.forEach(player => {
+                const photoHtml = player.photo_path 
+                    ? `<img src="${player.photo_path}" alt="${player.name}" class="draft-player-photo">`
+                    : `<div class="draft-player-placeholder">📷</div>`;
+                    
+                html += `
+                    <div class="draft-player-card" onclick="draftPlayer(${player.id})" data-player-id="${player.id}">
+                        ${photoHtml}
+                        <div style="color: var(--pure-white); font-weight: bold; margin-bottom: 5px;">
+                            ${player.name}
+                        </div>
+                        ${player.nickname ? `<div style="color: var(--gold-accent); font-size: 12px; font-style: italic; margin-bottom: 5px;">"${player.nickname}"</div>` : ''}
+                        <div style="color: var(--metallic-silver); font-size: 12px;">
+                            ${player.position || 'Utility'} • ${player.years_played} years
+                        </div>
+                    </div>
+                `;
+            });
+            
+            playersGrid.innerHTML = html;
+            
+            // Highlight cards if it's current team's turn
+            if (currentTeamId) {
+                const playerCards = playersGrid.querySelectorAll('.draft-player-card');
+                playerCards.forEach(card => {
+                    card.classList.add('current-turn');
+                });
+            }
+        }
+        
+        function updateTeamRosters(teams, currentTeamId) {
+            const teamRosters = document.getElementById('team-rosters');
+            if (!teamRosters) return;
+            
+            let html = '';
+            teams.forEach(team => {
+                const isCurrentPick = team.id === currentTeamId;
+                html += `
+                    <div class="team-roster-card ${isCurrentPick ? 'current-pick' : ''}" style="border-color: ${team.team_color};">
+                        <div class="team-roster-header">
+                            <h4 style="color: ${team.team_color}; margin: 0;">${team.team_name}</h4>
+                            <span style="color: var(--metallic-silver);">${team.players ? team.players.length : 0}/8 players</span>
+                        </div>
+                        <div class="team-roster-players">
+                            ${team.players ? team.players.map(player => {
+                                const isCaptain = player.id === team.captain_player_id;
+                                const photoHtml = player.photo_path 
+                                    ? `<img src="${player.photo_path}" alt="${player.name}">`
+                                    : `<div class="roster-placeholder">📷</div>`;
+                                return `
+                                    <div class="roster-player-mini">
+                                        ${photoHtml}
+                                        <div style="color: var(--pure-white); font-size: 12px;">
+                                            ${isCaptain ? '👑 ' : ''}${player.name}
+                                            ${player.nickname ? ` "${player.nickname}"` : ''}
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('') : '<div style="color: var(--metallic-silver); font-style: italic; text-align: center; padding: 20px;">No players drafted yet</div>'}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            teamRosters.innerHTML = html;
+        }
+        
+        function draftPlayer(playerId) {
+            // Get current draft info from DOM
+            const draftInterface = document.getElementById('draft-interface');
+            if (!draftInterface) return;
+            
+            // Make AJAX call to draft the player
+            const formData = new FormData();
+            formData.append('action', 'draft_player');
+            formData.append('player_id', playerId);
+            
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Refresh the draft state
+                    loadDraftState();
+                    
+                    // Show success message briefly
+                    showDraftMessage(data.message, 'success');
+                } else {
+                    showDraftMessage(data.message, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error drafting player:', error);
+                showDraftMessage('Error drafting player. Please try again.', 'error');
+            });
+        }
+        
+        function showDraftMessage(message, type) {
+            // Create temporary message element
+            const messageDiv = document.createElement('div');
+            messageDiv.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 15px 25px;
+                border-radius: 8px;
+                color: white;
+                font-weight: bold;
+                z-index: 1000;
+                background: ${type === 'success' ? 'var(--success-green)' : 'var(--alert-red)'};
+                box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+                transition: all 0.3s ease;
+            `;
+            messageDiv.textContent = message;
+            
+            document.body.appendChild(messageDiv);
+            
+            // Remove after 3 seconds
+            setTimeout(() => {
+                messageDiv.style.opacity = '0';
+                messageDiv.style.transform = 'translateX(100px)';
+                setTimeout(() => messageDiv.remove(), 300);
+            }, 3000);
         }
     </script>
 </body>

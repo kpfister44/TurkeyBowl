@@ -180,7 +180,8 @@ CREATE TABLE event_settings (
 - **Event Settings Management**: Update event date, location, registration deadline, draft date, and current year
 - **Player Management**: Complete CRUD for roster with photo uploads, positions, years played, and active status
 - **Hall of Fame Management**: Tabbed interface for championships, awards, and records
-- **CRUD Operations**: Add, edit, delete functionality with JavaScript prompts and confirmations
+- **CRUD Operations**: Add, edit, delete functionality with expandable inline edit forms
+- **Inline Edit Forms**: Modern UX with forms that slide down below table rows, replacing old prompt() dialogs
 - **Form Validation**: Input validation and success/error messaging
 - **Retro Styling**: Maintains Madden 2003-2005 aesthetic with metallic effects
 
