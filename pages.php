@@ -22,10 +22,6 @@ function generatePageContent($page, $db, $eventSettings, $loginError = null) {
                             <strong style="color: var(--bright-orange);">Registration Deadline:</strong><br>
                             ' . date('F j, Y \a\t g:i A', strtotime($eventSettings['registration_deadline'])) . '
                         </div>
-                        <div>
-                            <strong style="color: var(--bright-orange);">Draft:</strong><br>
-                            ' . date('F j, Y \a\t g:i A', strtotime($eventSettings['draft_date'])) . '
-                        </div>
                     </div>
                 </div>
                 
@@ -198,19 +194,16 @@ function generateRosterPage($db, $eventSettings) {
     // Get current year players
     $players = $db->query('SELECT * FROM players WHERE current_year = 1 ORDER BY name');
     
-    // Get captain IDs from completed drafts for this year
+    // Get captain IDs from teams for this year
     $captainIds = [];
     $captainTeams = [];
-    $completedDraft = $db->query('SELECT * FROM draft_sessions WHERE year = ' . $currentYear . ' AND status = "completed" ORDER BY created_at DESC LIMIT 1')->fetchArray(SQLITE3_ASSOC);
-    if ($completedDraft) {
-        $captainsQuery = $db->query('SELECT captain_player_id, team_name, team_color FROM draft_teams WHERE draft_session_id = ' . $completedDraft['id'] . ' AND captain_player_id IS NOT NULL');
-        while ($captain = $captainsQuery->fetchArray(SQLITE3_ASSOC)) {
-            $captainIds[] = $captain['captain_player_id'];
-            $captainTeams[$captain['captain_player_id']] = [
-                'team_name' => $captain['team_name'],
-                'team_color' => $captain['team_color']
-            ];
-        }
+    $captainsQuery = $db->query('SELECT captain_id, name FROM teams WHERE year = ' . $currentYear . ' AND captain_id IS NOT NULL');
+    while ($captain = $captainsQuery->fetchArray(SQLITE3_ASSOC)) {
+        $captainIds[] = $captain['captain_id'];
+        $captainTeams[$captain['captain_id']] = [
+            'team_name' => $captain['name'],
+            'team_color' => 'var(--bright-orange)'
+        ];
     }
     
     echo '<div class="card">
@@ -298,150 +291,79 @@ function generateTeamsPage($db, $eventSettings) {
     
     $hasTeams = false;
     
-    // First check for completed draft teams
-    $completedDraft = $db->query('SELECT * FROM draft_sessions WHERE year = ' . $currentYear . ' AND status = "completed" ORDER BY created_at DESC LIMIT 1')->fetchArray(SQLITE3_ASSOC);
+    // Get teams from teams table
+    $teams = $db->query("SELECT * FROM teams WHERE year = $currentYear ORDER BY name");
     
-    if ($completedDraft) {
-        // Display draft teams
-        $draftTeamsQuery = $db->query('
-            SELECT dt.*, p.name as captain_name, COUNT(dp.id) as player_count
-            FROM draft_teams dt 
-            LEFT JOIN players p ON dt.captain_player_id = p.id 
-            LEFT JOIN draft_picks dp ON dt.id = dp.team_id 
-            WHERE dt.draft_session_id = ' . $completedDraft['id'] . ' 
-            GROUP BY dt.id 
-            ORDER BY dt.draft_order
+    while ($team = $teams->fetchArray(SQLITE3_ASSOC)) {
+        $hasTeams = true;
+        
+        // Get team players
+        $teamPlayersQuery = $db->prepare('
+            SELECT p.* FROM players p 
+            JOIN team_players tp ON p.id = tp.player_id 
+            WHERE tp.team_id = ? 
+            ORDER BY tp.draft_order, p.name
         ');
+        $teamPlayersQuery->bindValue(1, $team['id']);
+        $teamPlayers = $teamPlayersQuery->execute();
         
-        while ($team = $draftTeamsQuery->fetchArray(SQLITE3_ASSOC)) {
-            $hasTeams = true;
-            
-            // Get team players from draft picks
-            $teamPlayersQuery = $db->query('
-                SELECT p.* FROM draft_picks dp 
-                JOIN players p ON dp.player_id = p.id 
-                WHERE dp.team_id = ' . $team['id'] . ' 
-                ORDER BY dp.pick_number
-            ');
-            
-            echo '<div class="card" style="border: 3px solid ' . htmlspecialchars($team['team_color']) . ';">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                        <h2 style="color: var(--gold-accent); font-size: 2rem; margin: 0;">' . htmlspecialchars($team['team_name']) . '</h2>
-                        <div style="background: ' . htmlspecialchars($team['team_color']) . '; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 1.2rem;">
-                            #' . $team['draft_order'] . '
-                        </div>
-                    </div>';
-            
-            if ($team['captain_name']) {
-                echo '<p style="color: var(--bright-orange); margin-bottom: 15px;">
-                        <strong>Captain:</strong> ' . htmlspecialchars($team['captain_name']) . '
-                      </p>';
-            }
-            
-            echo '<p style="color: var(--metallic-silver); margin-bottom: 20px;">
-                    <strong>Players:</strong> ' . $team['player_count'] . '
+        // Get captain info
+        $captain = null;
+        if ($team['captain_id']) {
+            $captainQuery = $db->prepare('SELECT name FROM players WHERE id = ?');
+            $captainQuery->bindValue(1, $team['captain_id']);
+            $captainResult = $captainQuery->execute();
+            $captain = $captainResult->fetchArray(SQLITE3_ASSOC);
+        }
+        
+        echo '<div class="card" style="border: 3px solid var(--bright-orange);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="color: var(--gold-accent); font-size: 2rem; margin: 0;">' . htmlspecialchars($team['name']) . '</h2>';
+        
+        if ($team['logo_path']) {
+            echo '<div style="width: 60px; height: 60px; border-radius: 50%; overflow: hidden; border: 2px solid var(--gold-accent);">
+                    <img src="' . htmlspecialchars($team['logo_path']) . '" alt="Team Logo" style="width: 100%; height: 100%; object-fit: cover;">
+                  </div>';
+        }
+        
+        echo '</div>';
+        
+        if ($captain) {
+            echo '<p style="color: var(--bright-orange); margin-bottom: 15px;">
+                    <strong>Captain:</strong> ' . htmlspecialchars($captain['name']) . '
                   </p>';
-            
-            echo '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">';
-            
-            $playerCount = 0;
-            while ($player = $teamPlayersQuery->fetchArray(SQLITE3_ASSOC)) {
-                $playerCount++;
-                $photoPath = $player['photo_path'] ? htmlspecialchars($player['photo_path']) : 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=';
-                
-                echo '<div style="background: rgba(255,102,0,0.1); border: 1px solid ' . htmlspecialchars($team['team_color']) . '; border-radius: 6px; padding: 15px; text-align: center;">
-                        <div style="width: 60px; height: 60px; margin: 0 auto 10px; border-radius: 50%; overflow: hidden; border: 2px solid ' . htmlspecialchars($team['team_color']) . ';">
-                            <img src="' . $photoPath . '" alt="' . htmlspecialchars($player['name']) . '" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src=\'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=\'">
-                        </div>
-                        <h4 style="color: var(--pure-white); margin: 0 0 5px 0;">' . htmlspecialchars($player['name']) . '</h4>
-                        <p style="color: var(--metallic-silver); font-size: 0.8rem; margin: 0;">' . htmlspecialchars($player['position'] ?: 'Utility') . '</p>
-                      </div>';
-            }
-            
-            if ($playerCount === 0) {
-                echo '<div style="grid-column: 1 / -1; text-align: center; color: var(--metallic-silver); padding: 20px;">
-                        <p>No players drafted yet.</p>
-                      </div>';
-            }
-            
-            echo '</div>
-                </div>';
         }
-    } else {
-        // Fallback to regular teams table if no completed draft
-        $teams = $db->query("SELECT * FROM teams WHERE year = $currentYear ORDER BY name");
         
-        while ($team = $teams->fetchArray(SQLITE3_ASSOC)) {
-            $hasTeams = true;
+        echo '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">';
+        
+        $playerCount = 0;
+        while ($player = $teamPlayers->fetchArray(SQLITE3_ASSOC)) {
+            $playerCount++;
+            $photoPath = $player['photo_path'] ? htmlspecialchars($player['photo_path']) : 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=';
             
-            // Get team players
-            $teamPlayersQuery = $db->prepare('
-                SELECT p.* FROM players p 
-                JOIN team_players tp ON p.id = tp.player_id 
-                WHERE tp.team_id = ? 
-                ORDER BY tp.draft_order, p.name
-            ');
-            $teamPlayersQuery->bindValue(1, $team['id']);
-            $teamPlayers = $teamPlayersQuery->execute();
-            
-            // Get captain info
-            $captain = null;
-            if ($team['captain_id']) {
-                $captainQuery = $db->prepare('SELECT name FROM players WHERE id = ?');
-                $captainQuery->bindValue(1, $team['captain_id']);
-                $captainResult = $captainQuery->execute();
-                $captain = $captainResult->fetchArray(SQLITE3_ASSOC);
-            }
-            
-            echo '<div class="card" style="border: 3px solid var(--bright-orange);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                        <h2 style="color: var(--gold-accent); font-size: 2rem; margin: 0;">' . htmlspecialchars($team['name']) . '</h2>';
-            
-            if ($team['logo_path']) {
-                echo '<div style="width: 60px; height: 60px; border-radius: 50%; overflow: hidden; border: 2px solid var(--gold-accent);">
-                        <img src="' . htmlspecialchars($team['logo_path']) . '" alt="Team Logo" style="width: 100%; height: 100%; object-fit: cover;">
-                      </div>';
-            }
-            
-            echo '</div>';
-            
-            if ($captain) {
-                echo '<p style="color: var(--bright-orange); margin-bottom: 15px;">
-                        <strong>Captain:</strong> ' . htmlspecialchars($captain['name']) . '
-                      </p>';
-            }
-            
-            echo '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">';
-            
-            $playerCount = 0;
-            while ($player = $teamPlayers->fetchArray(SQLITE3_ASSOC)) {
-                $playerCount++;
-                $photoPath = $player['photo_path'] ? htmlspecialchars($player['photo_path']) : 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=';
-                
-                echo '<div style="background: rgba(255,102,0,0.1); border: 1px solid var(--metallic-silver); border-radius: 6px; padding: 15px; text-align: center;">
-                        <div style="width: 60px; height: 60px; margin: 0 auto 10px; border-radius: 50%; overflow: hidden; border: 2px solid var(--bright-orange);">
-                            <img src="' . $photoPath . '" alt="' . htmlspecialchars($player['name']) . '" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src=\'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=\'">
-                        </div>
-                        <h4 style="color: var(--pure-white); margin: 0 0 5px 0;">' . htmlspecialchars($player['name']) . '</h4>
-                        <p style="color: var(--metallic-silver); font-size: 0.8rem; margin: 0;">' . htmlspecialchars($player['position'] ?: 'Utility') . '</p>
-                      </div>';
-            }
-            
-            if ($playerCount === 0) {
-                echo '<div style="grid-column: 1 / -1; text-align: center; color: var(--metallic-silver); padding: 20px;">
-                        <p>No players drafted yet.</p>
-                      </div>';
-            }
-            
-            echo '</div>
-                </div>';
+            echo '<div style="background: rgba(255,102,0,0.1); border: 1px solid var(--metallic-silver); border-radius: 6px; padding: 15px; text-align: center;">
+                    <div style="width: 60px; height: 60px; margin: 0 auto 10px; border-radius: 50%; overflow: hidden; border: 2px solid var(--bright-orange);">
+                        <img src="' . $photoPath . '" alt="' . htmlspecialchars($player['name']) . '" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src=\'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzMzMyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBQaG90bzwvdGV4dD48L3N2Zz4=\'">
+                    </div>
+                    <h4 style="color: var(--pure-white); margin: 0 0 5px 0;">' . htmlspecialchars($player['name']) . '</h4>
+                    <p style="color: var(--metallic-silver); font-size: 0.8rem; margin: 0;">' . htmlspecialchars($player['position'] ?: 'Utility') . '</p>
+                  </div>';
         }
+        
+        if ($playerCount === 0) {
+            echo '<div style="grid-column: 1 / -1; text-align: center; color: var(--metallic-silver); padding: 20px;">
+                    <p>No players on this team yet.</p>
+                  </div>';
+        }
+        
+        echo '</div>
+            </div>';
     }
     
     if (!$hasTeams) {
         echo '<div class="card" style="text-align: center;">
                 <h2 style="color: var(--metallic-silver);">No Teams Created Yet</h2>
-                <p>Teams will appear here after the draft is completed.</p>
+                <p>Teams will appear here once they\'re created by the admin.</p>
               </div>';
     }
 }
@@ -535,10 +457,6 @@ function generateEventTab($currentTab, $eventSettings) {
                     <div class="form-group">
                         <label class="form-label">Registration Deadline:</label>
                         <input type="datetime-local" name="registration_deadline" class="form-input" value="' . date('Y-m-d\\TH:i', strtotime($eventSettings['registration_deadline'])) . '" required>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Draft Date & Time:</label>
-                        <input type="datetime-local" name="draft_date" class="form-input" value="' . date('Y-m-d\\TH:i', strtotime($eventSettings['draft_date'])) . '" required>
                     </div>
                 </div>
                 <div class="form-row">

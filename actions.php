@@ -168,21 +168,18 @@ function handleFormSubmission($db) {
                     $event_date = $_POST['event_date'] ?? '';
                     $event_location = trim($_POST['event_location'] ?? '');
                     $registration_deadline = $_POST['registration_deadline'] ?? '';
-                    $draft_date = $_POST['draft_date'] ?? '';
                     $current_year = filter_var($_POST['current_year'] ?? '', FILTER_VALIDATE_INT);
                     
-                    if ($event_date && $event_location && $registration_deadline && $draft_date && $current_year) {
+                    if ($event_date && $event_location && $registration_deadline && $current_year) {
                         // Convert datetime-local format to SQLite format
                         $event_date_formatted = date('Y-m-d H:i:s', strtotime($event_date));
                         $registration_deadline_formatted = date('Y-m-d H:i:s', strtotime($registration_deadline));
-                        $draft_date_formatted = date('Y-m-d H:i:s', strtotime($draft_date));
                         
                         // Validate dates
                         $eventDateTime = strtotime($event_date);
                         $regDateTime = strtotime($registration_deadline);
-                        $draftDateTime = strtotime($draft_date);
                         
-                        if ($eventDateTime && $regDateTime && $draftDateTime && $current_year >= 2020 && $current_year <= 2030) {
+                        if ($eventDateTime && $regDateTime && $current_year >= 2020 && $current_year <= 2030) {
                             // Clean up any duplicate records - keep only the most recent one
                             $cleanupStmt = $db->prepare('DELETE FROM event_settings WHERE id NOT IN (SELECT MAX(id) FROM event_settings)');
                             $cleanupStmt->execute();
@@ -193,21 +190,19 @@ function handleFormSubmission($db) {
                             
                             if ($existingRecord) {
                                 // Update the existing record
-                                $stmt = $db->prepare('UPDATE event_settings SET event_date = ?, event_location = ?, registration_deadline = ?, draft_date = ?, current_year = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+                                $stmt = $db->prepare('UPDATE event_settings SET event_date = ?, event_location = ?, registration_deadline = ?, current_year = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
                                 $stmt->bindValue(1, $event_date_formatted);
                                 $stmt->bindValue(2, $event_location);
                                 $stmt->bindValue(3, $registration_deadline_formatted);
-                                $stmt->bindValue(4, $draft_date_formatted);
-                                $stmt->bindValue(5, $current_year);
-                                $stmt->bindValue(6, $existingRecord['id']);
+                                $stmt->bindValue(4, $current_year);
+                                $stmt->bindValue(5, $existingRecord['id']);
                             } else {
                                 // Insert new record
-                                $stmt = $db->prepare('INSERT INTO event_settings (event_date, event_location, registration_deadline, draft_date, current_year) VALUES (?, ?, ?, ?, ?)');
+                                $stmt = $db->prepare('INSERT INTO event_settings (event_date, event_location, registration_deadline, current_year) VALUES (?, ?, ?, ?)');
                                 $stmt->bindValue(1, $event_date_formatted);
                                 $stmt->bindValue(2, $event_location);
                                 $stmt->bindValue(3, $registration_deadline_formatted);
-                                $stmt->bindValue(4, $draft_date_formatted);
-                                $stmt->bindValue(5, $current_year);
+                                $stmt->bindValue(4, $current_year);
                             }
                             
                             if ($stmt->execute()) {
@@ -480,337 +475,104 @@ function handleFormSubmission($db) {
                     exit;
                     break;
                     
-                case 'start_draft':
+                case 'delete_team':
                     requireAdmin();
-                    $draft_session_id = filter_var($_POST['draft_session_id'] ?? '', FILTER_VALIDATE_INT);
+                    $teamId = filter_var($_POST['team_id'] ?? '', FILTER_VALIDATE_INT);
                     
-                    if ($draft_session_id) {
-                        // Auto-place captains on their teams before starting draft
-                        $teamsQuery = $db->query('SELECT id, captain_player_id FROM draft_teams WHERE draft_session_id = ' . $draft_session_id . ' AND captain_player_id IS NOT NULL');
-                        $pickNumber = 0;
+                    if ($teamId) {
+                        // Delete team players first
+                        $db->prepare('DELETE FROM team_players WHERE team_id = ?')->bindValue(1, $teamId)->execute();
+                        // Delete the team
+                        $stmt = $db->prepare('DELETE FROM teams WHERE id = ?');
+                        $stmt->bindValue(1, $teamId);
                         
-                        while ($team = $teamsQuery->fetchArray(SQLITE3_ASSOC)) {
-                            $pickNumber++;
-                            $captainPickStmt = $db->prepare('INSERT INTO draft_picks (draft_session_id, team_id, player_id, pick_number, pick_time) VALUES (?, ?, ?, ?, datetime("now"))');
-                            $captainPickStmt->bindValue(1, $draft_session_id);
-                            $captainPickStmt->bindValue(2, $team['id']);
-                            $captainPickStmt->bindValue(3, $team['captain_player_id']);
-                            $captainPickStmt->bindValue(4, $pickNumber);
-                            $captainPickStmt->execute();
-                        }
-                        
-                        // Start the draft
-                        $stmt = $db->prepare('UPDATE draft_sessions SET status = "active", timer_expires_at = datetime("now", "+30 seconds") WHERE id = ? AND status = "setup"');
-                        $stmt->bindValue(1, $draft_session_id);
-                        
-                        // Set first team to draft
-                        $firstTeamStmt = $db->prepare('UPDATE draft_sessions SET current_pick_team_id = (SELECT id FROM draft_teams WHERE draft_session_id = ? AND draft_order = 1) WHERE id = ?');
-                        $firstTeamStmt->bindValue(1, $draft_session_id);
-                        $firstTeamStmt->bindValue(2, $draft_session_id);
-                        $firstTeamStmt->execute();
-                        
-                        if ($stmt->execute() && $db->changes() > 0) {
-                            $_SESSION['success_message'] = 'Draft started! Captains have been placed on their teams. Good luck!';
+                        if ($stmt->execute()) {
+                            $_SESSION['success_message'] = 'Team deleted successfully!';
                         } else {
-                            $_SESSION['error_message'] = 'Error starting draft or draft already in progress.';
+                            $_SESSION['error_message'] = 'Error deleting team.';
                         }
                     } else {
-                        $_SESSION['error_message'] = 'Invalid draft session.';
-                    }
-                    header('Location: ?page=admin&tab=draft');
-                    exit;
-                    break;
-                    
-                case 'reset_draft':
-                    requireAdmin();
-                    $draft_session_id = filter_var($_POST['draft_session_id'] ?? '', FILTER_VALIDATE_INT);
-                    
-                    if ($draft_session_id) {
-                        // Delete draft picks
-                        $db->prepare('DELETE FROM draft_picks WHERE draft_session_id = ?')->bindValue(1, $draft_session_id)->execute();
-                        // Delete draft teams  
-                        $db->prepare('DELETE FROM draft_teams WHERE draft_session_id = ?')->bindValue(1, $draft_session_id)->execute();
-                        // Delete draft session
-                        $db->prepare('DELETE FROM draft_sessions WHERE id = ?')->bindValue(1, $draft_session_id)->execute();
-                        
-                        $_SESSION['success_message'] = 'Draft reset successfully.';
-                    } else {
-                        $_SESSION['error_message'] = 'Invalid draft session.';
-                    }
-                    header('Location: ?page=admin&tab=draft');
-                    exit;
-                    break;
-                    
-                case 'end_draft':
-                    requireAdmin();
-                    $draft_session_id = filter_var($_POST['draft_session_id'] ?? '', FILTER_VALIDATE_INT);
-                    
-                    if ($draft_session_id) {
-                        $stmt = $db->prepare('UPDATE draft_sessions SET status = "completed" WHERE id = ? AND status = "active"');
-                        $stmt->bindValue(1, $draft_session_id);
-                        
-                        if ($stmt->execute() && $db->changes() > 0) {
-                            $_SESSION['success_message'] = 'Draft ended successfully! Check the Teams tab to see final rosters.';
-                        } else {
-                            $_SESSION['error_message'] = 'Error ending draft or no active draft found.';
-                        }
-                    } else {
-                        $_SESSION['error_message'] = 'Invalid draft session.';
+                        $_SESSION['error_message'] = 'Invalid team ID.';
                     }
                     header('Location: ?page=admin&tab=teams');
                     exit;
                     break;
                     
-                case 'draft_player':
+                case 'add_player_to_team':
                     requireAdmin();
-                    $player_id = filter_var($_POST['player_id'] ?? '', FILTER_VALIDATE_INT);
+                    header('Content-Type: application/json');
                     
-                    // Get current active draft
-                    $draft = $db->query('SELECT * FROM draft_sessions WHERE status = "active" ORDER BY created_at DESC LIMIT 1')->fetchArray(SQLITE3_ASSOC);
+                    $teamId = filter_var($_POST['team_id'] ?? '', FILTER_VALIDATE_INT);
+                    $playerId = filter_var($_POST['player_id'] ?? '', FILTER_VALIDATE_INT);
                     
-                    if (!$draft) {
-                        echo json_encode(['success' => false, 'message' => 'No active draft session']);
+                    if (!$teamId || !$playerId) {
+                        echo json_encode(['success' => false, 'error' => 'Invalid parameters']);
                         exit;
                     }
                     
-                    $draft_session_id = $draft['id'];
-                    $team_id = $draft['current_pick_team_id'];
+                    // Check if player is already on a team
+                    $existingTeam = $db->prepare('SELECT team_id FROM team_players WHERE player_id = ?');
+                    $existingTeam->bindValue(1, $playerId);
+                    $existingResult = $existingTeam->execute();
+                    $existing = $existingResult->fetchArray(SQLITE3_ASSOC);
                     
-                    if ($draft_session_id && $team_id && $player_id) {
-                        if ($draft) {
-                            // Check if player is available (active this year and not drafted)
-                            $playerCheck = $db->prepare('
-                                SELECT p.* FROM players p 
-                                WHERE p.id = ? AND p.current_year = 1 
-                                AND NOT EXISTS (SELECT 1 FROM draft_picks dp WHERE dp.player_id = p.id AND dp.draft_session_id = ?)
-                                AND NOT EXISTS (SELECT 1 FROM draft_teams dt WHERE dt.captain_player_id = p.id AND dt.draft_session_id = ?)
-                            ');
-                            $playerCheck->bindValue(1, $player_id);
-                            $playerCheck->bindValue(2, $draft_session_id);
-                            $playerCheck->bindValue(3, $draft_session_id);
-                            $playerResult = $playerCheck->execute();
-                            $player = $playerResult->fetchArray(SQLITE3_ASSOC);
-                            
-                            if ($player) {
-                                // Calculate pick number (total picks including captains)
-                                $totalPickCount = $db->query('SELECT COUNT(*) as count FROM draft_picks WHERE draft_session_id = ' . $draft_session_id)->fetchArray(SQLITE3_ASSOC);
-                                $pickNumber = $totalPickCount['count'] + 1;
-                                
-                                // Calculate draft pick number (excluding captain picks for round calculation)
-                                $nonCaptainPickCount = $db->query('
-                                    SELECT COUNT(*) as count FROM draft_picks dp 
-                                    WHERE dp.draft_session_id = ' . $draft_session_id . ' 
-                                    AND NOT EXISTS (SELECT 1 FROM draft_teams dt WHERE dt.captain_player_id = dp.player_id AND dt.draft_session_id = ' . $draft_session_id . ')
-                                ')->fetchArray(SQLITE3_ASSOC);
-                                $draftPickNumber = $nonCaptainPickCount['count'] + 1;
-                                $round = ceil($draftPickNumber / $draft['num_teams']);
-                                
-                                // Draft the player
-                                $draftStmt = $db->prepare('
-                                    INSERT INTO draft_picks (draft_session_id, team_id, player_id, round, pick_number) 
-                                    VALUES (?, ?, ?, ?, ?)
-                                ');
-                                $draftStmt->bindValue(1, $draft_session_id);
-                                $draftStmt->bindValue(2, $team_id);
-                                $draftStmt->bindValue(3, $player_id);
-                                $draftStmt->bindValue(4, $round);
-                                $draftStmt->bindValue(5, $pickNumber);
-                                
-                                if ($draftStmt->execute()) {
-                                    // Check if there are more available players
-                                    $remainingPlayersCount = $db->query('
-                                        SELECT COUNT(*) as count FROM players p 
-                                        WHERE p.current_year = 1 
-                                        AND NOT EXISTS (SELECT 1 FROM draft_picks dp WHERE dp.player_id = p.id AND dp.draft_session_id = ' . $draft_session_id . ')
-                                        AND NOT EXISTS (SELECT 1 FROM draft_teams dt WHERE dt.captain_player_id = p.id AND dt.draft_session_id = ' . $draft_session_id . ')
-                                    ')->fetchArray(SQLITE3_ASSOC);
-                                    
-                                    if ($remainingPlayersCount['count'] > 0) {
-                                        // More players available - continue draft
-                                        $currentPickInRound = ($draftPickNumber - 1) % $draft['num_teams'] + 1;
-                                        $nextTeamOrder = getNextTeamOrder($draft['num_teams'], $round, $currentPickInRound);
-                                        
-                                        if ($nextTeamOrder) {
-                                            // Get next team ID
-                                            $nextTeamQuery = $db->prepare('SELECT id FROM draft_teams WHERE draft_session_id = ? AND draft_order = ?');
-                                            $nextTeamQuery->bindValue(1, $draft_session_id);
-                                            $nextTeamQuery->bindValue(2, $nextTeamOrder);
-                                            $nextTeamResult = $nextTeamQuery->execute();
-                                            $nextTeam = $nextTeamResult->fetchArray(SQLITE3_ASSOC);
-                                            
-                                            if ($nextTeam) {
-                                                // Update current pick team and reset timer
-                                                $updateDraft = $db->prepare('
-                                                    UPDATE draft_sessions 
-                                                    SET current_pick_team_id = ?, timer_expires_at = datetime("now", "+30 seconds") 
-                                                    WHERE id = ?
-                                                ');
-                                                $updateDraft->bindValue(1, $nextTeam['id']);
-                                                $updateDraft->bindValue(2, $draft_session_id);
-                                                $updateDraft->execute();
-                                            }
-                                        }
-                                    } else {
-                                        // No more players available - draft is complete
-                                        $db->prepare('UPDATE draft_sessions SET status = "completed" WHERE id = ?')->bindValue(1, $draft_session_id)->execute();
-                                    }
-                                    
-                                    echo json_encode(['success' => true, 'message' => 'Player drafted successfully!']);
-                                } else {
-                                    echo json_encode(['success' => false, 'message' => 'Error drafting player.']);
-                                }
-                            } else {
-                                echo json_encode(['success' => false, 'message' => 'Player not available.']);
-                            }
-                        } else {
-                            echo json_encode(['success' => false, 'message' => 'Not your turn to draft.']);
-                        }
+                    if ($existing) {
+                        echo json_encode(['success' => false, 'error' => 'Player is already on a team']);
+                        exit;
+                    }
+                    
+                    // Get highest draft_order for this team
+                    $maxOrder = $db->query('SELECT MAX(draft_order) as max_order FROM team_players WHERE team_id = ' . $teamId)->fetchArray(SQLITE3_ASSOC);
+                    $newOrder = ($maxOrder['max_order'] ?? 0) + 1;
+                    
+                    // Add player to team
+                    $stmt = $db->prepare('INSERT INTO team_players (team_id, player_id, draft_order) VALUES (?, ?, ?)');
+                    $stmt->bindValue(1, $teamId);
+                    $stmt->bindValue(2, $playerId);
+                    $stmt->bindValue(3, $newOrder);
+                    
+                    if ($stmt->execute()) {
+                        echo json_encode(['success' => true]);
                     } else {
-                        echo json_encode(['success' => false, 'message' => 'Invalid request.']);
+                        echo json_encode(['success' => false, 'error' => 'Database error']);
+                    }
+                    exit;
+                    break;
+                    
+                case 'remove_player_from_team':
+                    requireAdmin();
+                    header('Content-Type: application/json');
+                    
+                    $teamId = filter_var($_POST['team_id'] ?? '', FILTER_VALIDATE_INT);
+                    $playerId = filter_var($_POST['player_id'] ?? '', FILTER_VALIDATE_INT);
+                    
+                    if (!$teamId || !$playerId) {
+                        echo json_encode(['success' => false, 'error' => 'Invalid parameters']);
+                        exit;
+                    }
+                    
+                    $stmt = $db->prepare('DELETE FROM team_players WHERE team_id = ? AND player_id = ?');
+                    $stmt->bindValue(1, $teamId);
+                    $stmt->bindValue(2, $playerId);
+                    
+                    if ($stmt->execute()) {
+                        echo json_encode(['success' => true]);
+                    } else {
+                        echo json_encode(['success' => false, 'error' => 'Database error']);
                     }
                     exit;
                     break;
                     
                 case 'get_active_players':
                     requireAdmin();
+                    header('Content-Type: application/json');
+                    
                     $players = $db->query('SELECT id, name, nickname FROM players WHERE current_year = 1 ORDER BY name');
                     $playerList = [];
                     while ($player = $players->fetchArray(SQLITE3_ASSOC)) {
                         $playerList[] = $player;
                     }
-                    header('Content-Type: application/json');
                     echo json_encode($playerList);
-                    exit;
-                    break;
-                    
-                case 'get_draft_state':
-                    requireAdmin();
-                    // Get current draft session
-                    $draft = $db->query('SELECT * FROM draft_sessions WHERE status = "active" ORDER BY created_at DESC LIMIT 1')->fetchArray(SQLITE3_ASSOC);
-                    
-                    if (!$draft) {
-                        echo json_encode(['success' => false, 'message' => 'No active draft']);
-                        exit;
-                    }
-                    
-                    // Get current team info
-                    $currentTeam = null;
-                    if ($draft['current_pick_team_id']) {
-                        $currentTeam = $db->query('SELECT * FROM draft_teams WHERE id = ' . $draft['current_pick_team_id'])->fetchArray(SQLITE3_ASSOC);
-                    }
-                    
-                    // Calculate time remaining
-                    $timeRemaining = 0;
-                    if ($draft['timer_expires_at']) {
-                        $expiresAt = new DateTime($draft['timer_expires_at']);
-                        $now = new DateTime();
-                        $diff = $expiresAt->getTimestamp() - $now->getTimestamp();
-                        $timeRemaining = max(0, $diff);
-                    }
-                    
-                    // Get available players (exclude captains and already drafted players)
-                    $availablePlayers = [];
-                    $playersQuery = $db->query('
-                        SELECT p.* FROM players p 
-                        WHERE p.current_year = 1 
-                        AND NOT EXISTS (SELECT 1 FROM draft_picks dp WHERE dp.player_id = p.id AND dp.draft_session_id = ' . $draft['id'] . ')
-                        AND NOT EXISTS (SELECT 1 FROM draft_teams dt WHERE dt.captain_player_id = p.id AND dt.draft_session_id = ' . $draft['id'] . ')
-                        ORDER BY p.name
-                    ');
-                    while ($player = $playersQuery->fetchArray(SQLITE3_ASSOC)) {
-                        $availablePlayers[] = $player;
-                    }
-                    
-                    // Get all teams with their players
-                    $teams = [];
-                    $teamsQuery = $db->query('SELECT * FROM draft_teams WHERE draft_session_id = ' . $draft['id'] . ' ORDER BY draft_order');
-                    while ($team = $teamsQuery->fetchArray(SQLITE3_ASSOC)) {
-                        // Get team players
-                        $teamPlayers = [];
-                        $playersQuery = $db->query('
-                            SELECT p.* FROM draft_picks dp 
-                            JOIN players p ON dp.player_id = p.id 
-                            WHERE dp.team_id = ' . $team['id'] . ' 
-                            ORDER BY dp.pick_number
-                        ');
-                        while ($player = $playersQuery->fetchArray(SQLITE3_ASSOC)) {
-                            $teamPlayers[] = $player;
-                        }
-                        
-                        $team['players'] = $teamPlayers;
-                        $teams[] = $team;
-                    }
-                    
-                    // Calculate current pick info
-                    $totalPickCount = $db->query('SELECT COUNT(*) as count FROM draft_picks WHERE draft_session_id = ' . $draft['id'])->fetchArray(SQLITE3_ASSOC);
-                    $totalPickNumber = $totalPickCount['count'] + 1;
-                    
-                    // Calculate draft pick info (excluding captain picks for display)
-                    $nonCaptainPickCount = $db->query('
-                        SELECT COUNT(*) as count FROM draft_picks dp 
-                        WHERE dp.draft_session_id = ' . $draft['id'] . ' 
-                        AND NOT EXISTS (SELECT 1 FROM draft_teams dt WHERE dt.captain_player_id = dp.player_id AND dt.draft_session_id = ' . $draft['id'] . ')
-                    ')->fetchArray(SQLITE3_ASSOC);
-                    $draftPickNumber = $nonCaptainPickCount['count'] + 1;
-                    $round = ceil($draftPickNumber / $draft['num_teams']);
-                    
-                    echo json_encode([
-                        'success' => true,
-                        'currentTeam' => $currentTeam,
-                        'currentTeamId' => $draft['current_pick_team_id'],
-                        'round' => $round,
-                        'pickNumber' => $draftPickNumber,
-                        'timeRemaining' => $timeRemaining,
-                        'availablePlayers' => $availablePlayers,
-                        'teams' => $teams
-                    ]);
-                    exit;
-                    break;
-                    
-                case 'transfer_player':
-                    requireAdmin();
-                    header('Content-Type: application/json');
-                    
-                    $draftPickId = filter_var($_POST['draft_pick_id'] ?? '', FILTER_VALIDATE_INT);
-                    $newTeamId = filter_var($_POST['new_team_id'] ?? '', FILTER_VALIDATE_INT);
-                    
-                    if (!$draftPickId || !$newTeamId) {
-                        echo json_encode(['success' => false, 'error' => 'Invalid parameters']);
-                        exit;
-                    }
-                    
-                    // Verify the draft pick exists and get current info
-                    $checkQuery = $db->prepare('SELECT * FROM draft_picks WHERE id = ?');
-                    $checkQuery->bindValue(1, $draftPickId);
-                    $checkResult = $checkQuery->execute();
-                    $draftPick = $checkResult->fetchArray(SQLITE3_ASSOC);
-                    
-                    if (!$draftPick) {
-                        echo json_encode(['success' => false, 'error' => 'Draft pick not found']);
-                        exit;
-                    }
-                    
-                    // Verify the target team exists
-                    $teamCheckQuery = $db->prepare('SELECT * FROM draft_teams WHERE id = ?');
-                    $teamCheckQuery->bindValue(1, $newTeamId);
-                    $teamCheckResult = $teamCheckQuery->execute();
-                    $targetTeam = $teamCheckResult->fetchArray(SQLITE3_ASSOC);
-                    
-                    if (!$targetTeam) {
-                        echo json_encode(['success' => false, 'error' => 'Target team not found']);
-                        exit;
-                    }
-                    
-                    // Update the draft pick to assign player to new team
-                    $updateQuery = $db->prepare('UPDATE draft_picks SET team_id = ? WHERE id = ?');
-                    $updateQuery->bindValue(1, $newTeamId);
-                    $updateQuery->bindValue(2, $draftPickId);
-                    
-                    if ($updateQuery->execute()) {
-                        echo json_encode(['success' => true]);
-                    } else {
-                        echo json_encode(['success' => false, 'error' => 'Database update failed']);
-                    }
                     exit;
                     break;
                     
@@ -834,7 +596,7 @@ function handleFormSubmission($db) {
                     }
                     
                     // Verify team exists
-                    $checkQuery = $db->prepare('SELECT * FROM draft_teams WHERE id = ?');
+                    $checkQuery = $db->prepare('SELECT * FROM teams WHERE id = ?');
                     $checkQuery->bindValue(1, $teamId);
                     $checkResult = $checkQuery->execute();
                     $team = $checkResult->fetchArray(SQLITE3_ASSOC);
@@ -845,10 +607,9 @@ function handleFormSubmission($db) {
                     }
                     
                     // Update the team
-                    $updateQuery = $db->prepare('UPDATE draft_teams SET team_name = ?, team_color = ? WHERE id = ?');
+                    $updateQuery = $db->prepare('UPDATE teams SET name = ? WHERE id = ?');
                     $updateQuery->bindValue(1, $teamName);
-                    $updateQuery->bindValue(2, $teamColor);
-                    $updateQuery->bindValue(3, $teamId);
+                    $updateQuery->bindValue(2, $teamId);
                     
                     if ($updateQuery->execute()) {
                         echo json_encode(['success' => true]);

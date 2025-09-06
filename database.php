@@ -86,7 +86,6 @@ function initDatabase() {
             event_date DATETIME,
             event_location TEXT,
             registration_deadline DATETIME,
-            draft_date DATETIME,
             current_year INTEGER DEFAULT 2024,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
@@ -104,12 +103,12 @@ function initDatabase() {
     $settingsCount = $checkSettings->fetchArray(SQLITE3_ASSOC);
     
     if ($settingsCount['count'] == 0) {
-        $defaultSettings = $db->prepare('INSERT INTO event_settings (event_date, event_location, registration_deadline, draft_date, current_year) VALUES (?, ?, ?, ?, ?)');
+        $defaultSettings = $db->prepare('INSERT INTO event_settings (event_date, event_location, registration_deadline, current_year) VALUES (?, ?, ?, ?)');
         $defaultSettings->bindValue(1, '2024-11-28 10:00:00');
         $defaultSettings->bindValue(2, 'Central Park Field #3');
         $defaultSettings->bindValue(3, '2024-11-20 23:59:59');
         $defaultSettings->bindValue(4, '2024-11-25 19:00:00');
-        $defaultSettings->bindValue(5, 2024);
+        $defaultSettings->bindValue(4, 2024);
         $defaultSettings->execute();
     }
     
@@ -128,21 +127,6 @@ function requireAdmin() {
     }
 }
 
-function getNextTeamOrder($numTeams, $round, $currentPickInRound) {
-    // Snake draft logic - alternating direction each round
-    if ($currentPickInRound >= $numTeams) {
-        // End of round
-        return null;
-    }
-    
-    if ($round % 2 == 1) {
-        // Odd rounds: 1, 2, 3, 4
-        return $currentPickInRound + 1;
-    } else {
-        // Even rounds: 4, 3, 2, 1 (reverse order)
-        return $numTeams - $currentPickInRound + 1;
-    }
-}
 
 // Initialize database and return connection
 function getDatabaseConnection() {

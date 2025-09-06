@@ -457,117 +457,10 @@ function generateCSS() {
         }
 
         /* Draft System Styles */
-        .draft-teams-preview {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin: 20px 0;
-        }
-
         .team-preview {
             padding: 20px;
             border-radius: 8px;
             border: 2px solid transparent;
-        }
-
-        .draft-header {
-            background: linear-gradient(145deg, #2a2a2a 0%, #1a1a1a 100%);
-            border: 2px solid var(--gold-accent);
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-
-        .draft-status {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin: 15px 0;
-            flex-wrap: wrap;
-            gap: 20px;
-        }
-
-        .current-pick-info {
-            font-size: 1.2rem;
-            font-weight: bold;
-            color: var(--bright-orange);
-        }
-
-        .draft-timer {
-            font-size: 3rem;
-            font-weight: bold;
-            color: var(--pure-white);
-            background: linear-gradient(145deg, #333 0%, #1a1a1a 100%);
-            border: 3px solid var(--gold-accent);
-            border-radius: 50%;
-            width: 100px;
-            height: 100px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 0 20px rgba(255,215,0,0.3);
-        }
-
-        .draft-main {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 30px;
-            margin-top: 20px;
-        }
-
-        .draft-board {
-            background: linear-gradient(145deg, #2a2a2a 0%, #1a1a1a 100%);
-            border: 2px solid var(--metallic-silver);
-            border-radius: 8px;
-            padding: 20px;
-        }
-
-        .player-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-            gap: 15px;
-            max-height: 600px;
-            overflow-y: auto;
-        }
-
-        .draft-player-card {
-            background: linear-gradient(145deg, #333 0%, #222 100%);
-            border: 2px solid var(--metallic-silver);
-            border-radius: 8px;
-            padding: 15px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .draft-player-card:hover,
-        .draft-player-card.current-turn {
-            border-color: var(--bright-orange);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(255,102,0,0.3);
-        }
-
-        .draft-player-photo {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            margin-bottom: 10px;
-            object-fit: cover;
-            border: 2px solid var(--metallic-silver);
-        }
-
-        .draft-player-placeholder {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            margin: 0 auto 10px;
-            background: var(--dark-gray);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 2px solid var(--metallic-silver);
-            font-size: 24px;
         }
 
         .team-roster-card {
@@ -734,9 +627,6 @@ function generateCSS() {
                 font-size: 2rem;
             }
 
-            .draft-main {
-                grid-template-columns: 1fr;
-            }
 
             .form-row {
                 grid-template-columns: 1fr;
@@ -1057,34 +947,9 @@ function generateJavaScript($eventSettings) {
             draggedPlayer.dataset.currentTeam = targetTeamId;
             
             // Send update to server
-            transferPlayer(draggedPlayer.dataset.draftPickId, targetTeamId);
+            // TODO: Implement team player management
         }
         
-        function transferPlayer(draftPickId, newTeamId) {
-            fetch(window.location.href, {
-                method: \'POST\',
-                headers: {
-                    \'Content-Type\': \'application/x-www-form-urlencoded\',
-                },
-                body: `action=transfer_player&draft_pick_id=${draftPickId}&new_team_id=${newTeamId}`
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showMessage(\'Player transferred successfully!\', \'success\');
-                    // Update team stats
-                    setTimeout(() => window.location.reload(), 1000);
-                } else {
-                    showMessage(\'Error transferring player: \' + (data.error || \'Unknown error\'), \'error\');
-                    window.location.reload(); // Revert on error
-                }
-            })
-            .catch(error => {
-                console.error(\'Transfer error:\', error);
-                showMessage(\'Transfer failed. Refreshing page...\', \'error\');
-                setTimeout(() => window.location.reload(), 1500);
-            });
-        }
         
         function editTeam(teamId) {
             const teamCard = document.querySelector(`[data-team-id="${teamId}"]`);
@@ -1526,7 +1391,7 @@ function generateJavaScript($eventSettings) {
             const numTeamsSelect = document.querySelector(\'select[name="num_teams"]\');
             const captainsContainer = document.getElementById(\'team-captains-container\');
             const captainSelects = document.getElementById(\'captain-selects\');
-            const setupBtn = document.getElementById(\'setup-draft-btn\');
+            // const setupBtn = document.getElementById(\'setup-draft-btn\'); // Draft functionality removed
             
             if (numTeamsSelect) {
                 numTeamsSelect.addEventListener(\'change\', function() {
@@ -1579,9 +1444,9 @@ function generateJavaScript($eventSettings) {
             }
             
             // Initialize draft interface if active
-            if (document.getElementById(\'draft-interface\')) {
-                initializeDraftInterface();
-            }
+            // if (document.getElementById(\'draft-interface\')) { // Draft functionality removed
+            //     initializeDraftInterface();
+            // }
         });
         
         // Draft interface functionality
@@ -1787,6 +1652,133 @@ function generateJavaScript($eventSettings) {
                 messageDiv.style.transform = \'translateX(100px)\';
                 setTimeout(() => messageDiv.remove(), 300);
             }, 3000);
+        }
+        
+        // Team Management Functions
+        function showAddTeamForm() {
+            document.getElementById('add-team-form').style.display = 'block';
+        }
+        
+        function hideAddTeamForm() {
+            document.getElementById('add-team-form').style.display = 'none';
+        }
+        
+        function deleteTeam(teamId) {
+            if (confirm('Are you sure you want to delete this team? This will also remove all players from the team.')) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.innerHTML = `<input type="hidden" name="action" value="delete_team"><input type="hidden" name="team_id" value="${teamId}">`;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+        
+        function removePlayerFromTeam(teamId, playerId) {
+            if (confirm('Are you sure you want to remove this player from the team?')) {
+                fetch(window.location.href, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `action=remove_player_from_team&team_id=${teamId}&player_id=${playerId}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showMessage('Player removed successfully!', 'success');
+                        setTimeout(() => window.location.reload(), 1000);
+                    } else {
+                        showMessage('Error removing player: ' + (data.error || 'Unknown error'), 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showMessage('Error removing player.', 'error');
+                });
+            }
+        }
+        
+        function manageTeamPlayers(teamId) {
+            // Create a modal or form for adding players to teams
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+                background: rgba(0,0,0,0.8); z-index: 1000; display: flex; 
+                align-items: center; justify-content: center;
+            `;
+            
+            // Get available players
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'action=get_active_players'
+            })
+            .then(response => response.json())
+            .then(players => {
+                let playerOptions = players.map(player => 
+                    `<option value="${player.id}">${player.name}${player.nickname ? ' "' + player.nickname + '"' : ''}</option>`
+                ).join('');
+                
+                modal.innerHTML = `
+                    <div style="background: var(--dark-navy); padding: 30px; border-radius: 8px; max-width: 400px; width: 90%;">
+                        <h3 style="color: var(--gold-accent); margin-bottom: 20px;">Add Player to Team</h3>
+                        <select id="player-select" style="width: 100%; padding: 10px; margin-bottom: 20px;">
+                            <option value="">Select a player...</option>
+                            ${playerOptions}
+                        </select>
+                        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                            <button onclick="closePlayerModal()" class="btn btn-secondary">Cancel</button>
+                            <button onclick="addPlayerToTeam(${teamId})" class="btn btn-primary">Add Player</button>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(modal);
+                window.currentModal = modal;
+            })
+            .catch(error => {
+                console.error('Error loading players:', error);
+                showMessage('Error loading available players.', 'error');
+            });
+        }
+        
+        function closePlayerModal() {
+            if (window.currentModal) {
+                window.currentModal.remove();
+                window.currentModal = null;
+            }
+        }
+        
+        function addPlayerToTeam(teamId) {
+            const playerId = document.getElementById('player-select').value;
+            if (!playerId) {
+                showMessage('Please select a player.', 'error');
+                return;
+            }
+            
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `action=add_player_to_team&team_id=${teamId}&player_id=${playerId}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showMessage('Player added successfully!', 'success');
+                    closePlayerModal();
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    showMessage('Error adding player: ' + (data.error || 'Unknown error'), 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showMessage('Error adding player to team.', 'error');
+            });
         }
     </script>';
 }
