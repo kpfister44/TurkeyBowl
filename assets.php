@@ -1656,17 +1656,17 @@ function generateJavaScript($eventSettings) {
         
         // Team Management Functions
         function showAddTeamForm() {
-            document.getElementById('add-team-form').style.display = 'block';
+            document.getElementById(\'add-team-form\').style.display = \'block\';
         }
         
         function hideAddTeamForm() {
-            document.getElementById('add-team-form').style.display = 'none';
+            document.getElementById(\'add-team-form\').style.display = \'none\';
         }
         
         function deleteTeam(teamId) {
-            if (confirm('Are you sure you want to delete this team? This will also remove all players from the team.')) {
-                const form = document.createElement('form');
-                form.method = 'POST';
+            if (confirm(\'Are you sure you want to delete this team? This will also remove all players from the team.\')) {
+                const form = document.createElement(\'form\');
+                form.method = \'POST\';
                 form.innerHTML = `<input type="hidden" name="action" value="delete_team"><input type="hidden" name="team_id" value="${teamId}">`;
                 document.body.appendChild(form);
                 form.submit();
@@ -1674,33 +1674,33 @@ function generateJavaScript($eventSettings) {
         }
         
         function removePlayerFromTeam(teamId, playerId) {
-            if (confirm('Are you sure you want to remove this player from the team?')) {
+            if (confirm(\'Are you sure you want to remove this player from the team?\')) {
                 fetch(window.location.href, {
-                    method: 'POST',
+                    method: \'POST\',
                     headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
+                        \'Content-Type\': \'application/x-www-form-urlencoded\',
                     },
                     body: `action=remove_player_from_team&team_id=${teamId}&player_id=${playerId}`
                 })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        showMessage('Player removed successfully!', 'success');
+                        showMessage(\'Player removed successfully!\', \'success\');
                         setTimeout(() => window.location.reload(), 1000);
                     } else {
-                        showMessage('Error removing player: ' + (data.error || 'Unknown error'), 'error');
+                        showMessage(\'Error removing player: \' + (data.error || \'Unknown error\'), \'error\');
                     }
                 })
                 .catch(error => {
-                    console.error('Error:', error);
-                    showMessage('Error removing player.', 'error');
+                    console.error(\'Error:\', error);
+                    showMessage(\'Error removing player.\', \'error\');
                 });
             }
         }
         
         function manageTeamPlayers(teamId) {
             // Create a modal or form for adding players to teams
-            const modal = document.createElement('div');
+            const modal = document.createElement(\'div\');
             modal.style.cssText = `
                 position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
                 background: rgba(0,0,0,0.8); z-index: 1000; display: flex; 
@@ -1709,17 +1709,17 @@ function generateJavaScript($eventSettings) {
             
             // Get available players
             fetch(window.location.href, {
-                method: 'POST',
+                method: \'POST\',
                 headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
+                    \'Content-Type\': \'application/x-www-form-urlencoded\',
                 },
-                body: 'action=get_active_players'
+                body: \'action=get_active_players\'
             })
             .then(response => response.json())
             .then(players => {
                 let playerOptions = players.map(player => 
-                    `<option value="${player.id}">${player.name}${player.nickname ? ' "' + player.nickname + '"' : ''}</option>`
-                ).join('');
+                    `<option value="${player.id}">${player.name}${player.nickname ? \' "\' + player.nickname + \'"\' : \'\'}></option>`
+                ).join(\'\');
                 
                 modal.innerHTML = `
                     <div style="background: var(--dark-navy); padding: 30px; border-radius: 8px; max-width: 400px; width: 90%;">
@@ -1739,8 +1739,8 @@ function generateJavaScript($eventSettings) {
                 window.currentModal = modal;
             })
             .catch(error => {
-                console.error('Error loading players:', error);
-                showMessage('Error loading available players.', 'error');
+                console.error(\'Error loading players:\', error);
+                showMessage(\'Error loading available players.\', \'error\');
             });
         }
         
@@ -1752,32 +1752,32 @@ function generateJavaScript($eventSettings) {
         }
         
         function addPlayerToTeam(teamId) {
-            const playerId = document.getElementById('player-select').value;
+            const playerId = document.getElementById(\'player-select\').value;
             if (!playerId) {
-                showMessage('Please select a player.', 'error');
+                showMessage(\'Please select a player.\', \'error\');
                 return;
             }
             
             fetch(window.location.href, {
-                method: 'POST',
+                method: \'POST\',
                 headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
+                    \'Content-Type\': \'application/x-www-form-urlencoded\',
                 },
                 body: `action=add_player_to_team&team_id=${teamId}&player_id=${playerId}`
             })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    showMessage('Player added successfully!', 'success');
+                    showMessage(\'Player added successfully!\', \'success\');
                     closePlayerModal();
                     setTimeout(() => window.location.reload(), 1000);
                 } else {
-                    showMessage('Error adding player: ' + (data.error || 'Unknown error'), 'error');
+                    showMessage(\'Error adding player: \' + (data.error || \'Unknown error\'), \'error\');
                 }
             })
             .catch(error => {
-                console.error('Error:', error);
-                showMessage('Error adding player to team.', 'error');
+                console.error(\'Error:\', error);
+                showMessage(\'Error adding player to team.\', \'error\');
             });
         }
     </script>';
