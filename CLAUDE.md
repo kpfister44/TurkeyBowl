@@ -4,10 +4,42 @@
 TurkeyBowl is a simple web application for managing an annual flag football event, including player drafts, team management, and historical records.
 
 ## Architecture
-- **Single-file application**: Everything in `index.php`
+- **5-file modular application**: Organized for optimal Claude Code development
 - **Database**: SQLite with raw SQL queries (no ORMs)
 - **Frontend**: Vanilla JavaScript and CSS only (no frameworks)
 - **Design**: Clean, minimalist, mobile-responsive inspired by retro Madden Football Video Games (Madden 2003-2005 on the Xbox)
+
+### **File Organization**
+1. **`index.php`** (67 lines) - Application entry point and orchestration
+   - Session management and authentication checks
+   - HTML document structure and navigation rendering
+   - Includes all component files
+
+2. **`database.php`** (160 lines) - Database layer and core functions
+   - Database initialization and table creation
+   - Helper functions (`isLoggedIn`, `requireAdmin`, `getNextTeamOrder`)
+   - SQLite connection management
+
+3. **`actions.php`** (783 lines) - Request handlers and form processing
+   - All POST request handling (login, CRUD operations)
+   - Draft system logic and team management APIs
+   - Authentication and form validation
+
+4. **`pages.php`** (1,051 lines) - Content generation and page rendering
+   - All page rendering functions (Home, History, Roster, Teams, Login, Admin)
+   - Admin interface tabs and forms
+   - Public page content generation
+
+5. **`assets.php`** (1,167 lines) - CSS styling and JavaScript functionality
+   - Complete retro Madden theme styling
+   - Interactive JavaScript (drag-and-drop, admin forms, draft system)
+   - Responsive design and animations
+
+**Benefits for Claude Code:**
+- Single-responsibility files for easier navigation
+- Clear separation of concerns
+- Reduced context switching
+- Maintainable and focused components
 
 ## Database Schema
 
@@ -118,12 +150,13 @@ CREATE TABLE event_settings (
 5. **Hall of Fame CRUD**: Complete admin interface for managing championships, awards, and records
 
 ## Development Guidelines
-- Keep all code in `index.php`
-- Use SQLite for data persistence
-- Implement drag-and-drop with vanilla JavaScript
-- No external frameworks or libraries
-- Mobile-first responsive design
-- Simple admin authentication (email/password, no recovery flow)
+- **File structure**: Maintain 5-file modular organization (index.php, database.php, actions.php, pages.php, assets.php)
+- **Database**: Use SQLite for data persistence with raw SQL queries
+- **Interactions**: Implement drag-and-drop with vanilla JavaScript
+- **Dependencies**: No external frameworks or libraries
+- **Design**: Mobile-first responsive design with retro Madden styling
+- **Authentication**: Simple admin authentication (email/password, no recovery flow)
+- **Backup**: Original single-file version preserved as `index_backup.php`
 
 ## Testing
 - Test drag-and-drop functionality thoroughly
@@ -179,10 +212,13 @@ CREATE TABLE event_settings (
 ## Admin Interface Features
 - **Event Settings Management**: Update event date, location, registration deadline, draft date, and current year
 - **Player Management**: Complete CRUD for roster with photo uploads, positions, years played, and active status
+- **Draft System**: Complete draft interface with real-time updates, team management, and snake draft logic
+- **Team Management**: Post-draft team editing with drag-and-drop player transfers between teams
 - **Hall of Fame Management**: Tabbed interface for championships, awards, and records
 - **CRUD Operations**: Add, edit, delete functionality with expandable inline edit forms
 - **Inline Edit Forms**: Modern UX with forms that slide down below table rows, replacing old prompt() dialogs
 - **Form Validation**: Input validation and success/error messaging
+- **Drag & Drop**: Interactive player management with visual feedback and empty roster handling
 - **Retro Styling**: Maintains Madden 2003-2005 aesthetic with metallic effects
 
 ## Style Guide Implementation
@@ -265,6 +301,28 @@ if ($count['count'] == 0) {
 - Use `$db->changes()` to verify row updates
 - Query the exact record being displayed vs. the record being updated
 - Consider adding unique constraints on business logic fields to prevent duplicates
+
+## Recent Architecture Changes (2025)
+
+### **File Restructuring (Completed)**
+**Previous:** Single 3,884-line `index.php` file  
+**Current:** 5-file modular architecture optimized for Claude Code
+
+**Migration Status:** ✅ Complete with 100% functionality preservation
+- All drag-and-drop features working (including empty roster handling)
+- All admin CRUD operations functional
+- Public pages rendering correctly
+- Authentication and form processing intact
+
+### **Key Improvements**
+- **Drag & Drop Fix**: Empty team rosters now have visible drop targets
+- **Error Handling**: Improved login error handling and form validation
+- **Visual Feedback**: Enhanced drag-and-drop with proper visual cues
+- **Code Organization**: Single-responsibility files for better maintainability
+
+### **Files Backup**
+- `index_backup.php` - Original single-file version (preserved for reference)
+- All functionality migrated to modular structure without loss
 
 ## Commit Message Guidelines
 
