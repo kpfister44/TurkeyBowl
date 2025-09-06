@@ -1,7 +1,7 @@
 # TurkeyBowl Project - Claude Code Assistant Guide
 
 ## Project Overview
-TurkeyBowl is a simple web application for managing an annual flag football event, including player drafts, team management, and historical records.
+TurkeyBowl is a simple web application for managing an annual flag football event, including simple team management and historical records.
 
 ## Architecture
 - **5-file modular application**: Organized for optimal Claude Code development
@@ -15,24 +15,24 @@ TurkeyBowl is a simple web application for managing an annual flag football even
    - HTML document structure and navigation rendering
    - Includes all component files
 
-2. **`database.php`** (160 lines) - Database layer and core functions
+2. **`database.php`** (134 lines) - Database layer and core functions
    - Database initialization and table creation
-   - Helper functions (`isLoggedIn`, `requireAdmin`, `getNextTeamOrder`)
+   - Helper functions (`isLoggedIn`, `requireAdmin`)
    - SQLite connection management
 
-3. **`actions.php`** (783 lines) - Request handlers and form processing
+3. **`actions.php`** (626 lines) - Request handlers and form processing
    - All POST request handling (login, CRUD operations)
-   - Draft system logic and team management APIs
+   - Simple team management APIs
    - Authentication and form validation
 
-4. **`pages.php`** (1,051 lines) - Content generation and page rendering
+4. **`pages.php`** (896 lines) - Content generation and page rendering
    - All page rendering functions (Home, History, Roster, Teams, Login, Admin)
    - Admin interface tabs and forms
    - Public page content generation
 
-5. **`assets.php`** (1,167 lines) - CSS styling and JavaScript functionality
+5. **`assets.php`** (1,785 lines) - CSS styling and JavaScript functionality
    - Complete retro Madden theme styling
-   - Interactive JavaScript (drag-and-drop, admin forms, draft system)
+   - Interactive JavaScript (team management, admin forms)
    - Responsive design and animations
 
 **Benefits for Claude Code:**
@@ -135,7 +135,6 @@ CREATE TABLE event_settings (
     event_date DATETIME,
     event_location TEXT,
     registration_deadline DATETIME,
-    draft_date DATETIME,
     current_year INTEGER DEFAULT 2024,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -144,22 +143,22 @@ CREATE TABLE event_settings (
 
 ## Key Features to Remember
 1. **Public pages**: Homepage, Hall of Fame/History, Roster, Teams
-2. **Admin-only**: Draft interface with drag-and-drop functionality, Hall of Fame management
+2. **Admin-only**: Simple team management interface, Hall of Fame management
 3. **Player management**: CRUD operations for player profiles with photo uploads
-4. **Draft system**: Supports 3-4 teams, real-time updates to database
+4. **Team management**: Simple team creation and player assignment (no draft system)
 5. **Hall of Fame CRUD**: Complete admin interface for managing championships, awards, and records
 
 ## Development Guidelines
 - **File structure**: Maintain 5-file modular organization (index.php, database.php, actions.php, pages.php, assets.php)
 - **Database**: Use SQLite for data persistence with raw SQL queries
-- **Interactions**: Implement drag-and-drop with vanilla JavaScript
+- **Interactions**: Simple team management with modal interfaces
 - **Dependencies**: No external frameworks or libraries
 - **Design**: Mobile-first responsive design with retro Madden styling
 - **Authentication**: Simple admin authentication (email/password, no recovery flow)
 - **Backup**: Original single-file version preserved as `index_backup.php`
 
 ## Testing
-- Test drag-and-drop functionality thoroughly
+- Test team management functionality thoroughly
 - Verify mobile responsiveness
 - Check admin authentication flow
 - Validate image upload for player photos
@@ -170,55 +169,64 @@ CREATE TABLE event_settings (
 **Comprehensive admin CRUD testing needed for newly implemented features:**
 
 #### **Event Settings Tab**
-- [ ] Update event date and verify it persists on page refresh
-- [ ] Update event location and confirm it displays on homepage
-- [ ] Update registration deadline and verify format/persistence
-- [ ] Update draft date and verify format/persistence  
-- [ ] Update current year and verify it affects other pages
-- [ ] Test form validation with invalid dates/empty fields
-- [ ] Verify success/error messages display correctly
+- [x] Update event date and verify it persists on page refresh
+- [x] Update event location and confirm it displays on homepage
+- [x] Update registration deadline and verify format/persistence
+- [x] Update current year and verify it affects other pages
+- [x] Test form validation with invalid dates/empty fields
+- [x] Verify success/error messages display correctly
 
 #### **Players Tab**
-- [ ] Add new player with all fields (name, nickname, position, bio, years, current year status)
-- [ ] Add new player with photo upload (PNG/JPEG validation)
-- [ ] Test photo upload with invalid formats (should reject)
-- [ ] Edit existing player and verify all fields update correctly
-- [ ] Edit player photo (should replace old photo file)
-- [ ] Delete player and verify photo file cleanup
-- [ ] Test player form validation (required fields, years 1-20)
-- [ ] Verify player data displays correctly on public Roster page
-- [ ] Test active/inactive player status functionality
+- [x] Add new player with all fields (name, nickname, position, bio, years, current year status)
+- [x] Add new player with photo upload (PNG/JPEG validation)
+- [x] Test photo upload with invalid formats (should reject)
+- [x] Edit existing player and verify all fields update correctly
+- [x] Edit player photo (should replace old photo file)
+- [x] Delete player and verify photo file cleanup
+- [x] Test player form validation (required fields, years 1-20)
+- [x] Verify player data displays correctly on public Roster page
+- [x] Test active/inactive player status functionality
+
+#### **Teams Tab** ✅ 
+- [x] Create new teams with captain selection
+- [x] Add players to teams via modal interface
+- [x] Remove individual players from teams
+- [x] Delete entire teams with confirmation
+- [x] Verify team rosters display correctly on public Teams page
+- [x] Test team management JavaScript functions
+- [x] Verify proper error handling and success messaging
 
 #### **Integration Testing**
-- [ ] Verify event settings changes reflect on homepage countdown and info
-- [ ] Confirm player changes appear correctly on public roster page
-- [ ] Test admin tab navigation and state persistence
-- [ ] Verify mobile responsiveness of new admin forms and tables
-- [ ] Check that existing Hall of Fame tabs still work correctly
+- [x] Verify event settings changes reflect on homepage countdown and info
+- [x] Confirm player changes appear correctly on public roster page
+- [x] Test admin tab navigation and state persistence
+- [x] Verify mobile responsiveness of new admin forms and tables
+- [x] Check that existing Hall of Fame tabs still work correctly
+- [x] Confirm team management workflow functions end-to-end
 
 ## Common Commands
 - **Run locally**: `php -S localhost:8000`
 - **Database**: SQLite file will be created automatically
 
 ## Important Notes
-- Public users can view all content except draft interface and admin pages
+- Public users can view all content except admin pages
 - Only admin can modify data (admin@turkeybowl.com / admin123)
 - Player photos must be PNG or JPEG
-- Team count is configurable (3-4 teams)
-- Draft updates save instantly to database
+- Team count is unlimited (admin creates teams as needed)
+- Team changes save instantly to database
 - Hall of Fame data can be managed through admin interface with tabbed navigation
 - Current branding: "EG TURKEY BOWL" (header) and "Turkey Bowl 2025" (homepage)
 
 ## Admin Interface Features
-- **Event Settings Management**: Update event date, location, registration deadline, draft date, and current year
+- **Event Settings Management**: Update event date, location, registration deadline, and current year
 - **Player Management**: Complete CRUD for roster with photo uploads, positions, years played, and active status
-- **Draft System**: Complete draft interface with real-time updates, team management, and snake draft logic
-- **Team Management**: Post-draft team editing with drag-and-drop player transfers between teams
+- **Simple Team Management**: Create teams, assign captains, add/remove players via modal interface
+- **Team Operations**: Add Team form, Manage Players modal, individual player removal, team deletion
 - **Hall of Fame Management**: Tabbed interface for championships, awards, and records
 - **CRUD Operations**: Add, edit, delete functionality with expandable inline edit forms
 - **Inline Edit Forms**: Modern UX with forms that slide down below table rows, replacing old prompt() dialogs
 - **Form Validation**: Input validation and success/error messaging
-- **Drag & Drop**: Interactive player management with visual feedback and empty roster handling
+- **Modal Interfaces**: Clean player selection and team management modals
 - **Retro Styling**: Maintains Madden 2003-2005 aesthetic with metallic effects
 
 ## Style Guide Implementation
@@ -304,24 +312,47 @@ if ($count['count'] == 0) {
 
 ## Recent Architecture Changes (2025)
 
+### **Draft System Removal & Simple Team Management (Latest)**
+**Status:** ✅ Completed - PR #4 merged
+**Date:** January 2025
+
+**Major Changes:**
+- **Draft system completely removed**: All draft-related actions, database tables, and UI components eliminated
+- **Simple team management implemented**: Clean admin interface for creating teams and managing players
+- **Database schema updated**: Removed `draft_date` field and `getNextTeamOrder()` function
+- **JavaScript modernized**: Fixed syntax errors, added team management functions
+
+**New Team Management Workflow:**
+1. Admin creates teams manually with optional captain selection
+2. Admin uses "Manage Players" modal to add players to teams
+3. Individual players can be removed from teams
+4. Entire teams can be deleted with confirmation
+5. Public Teams page displays final rosters
+
+**Technical Details:**
+- **Backend actions**: `delete_team`, `add_player_to_team`, `remove_player_from_team`
+- **Frontend functions**: `showAddTeamForm()`, `manageTeamPlayers()`, `removePlayerFromTeam()`
+- **File changes**: 8 files modified, 7,441 insertions, 3,853 deletions
+- **Code cleanup**: 616 lines of unused draft code removed
+
 ### **File Restructuring (Completed)**
 **Previous:** Single 3,884-line `index.php` file  
 **Current:** 5-file modular architecture optimized for Claude Code
 
 **Migration Status:** ✅ Complete with 100% functionality preservation
-- All drag-and-drop features working (including empty roster handling)
+- All team management features working
 - All admin CRUD operations functional
 - Public pages rendering correctly
 - Authentication and form processing intact
 
 ### **Key Improvements**
-- **Drag & Drop Fix**: Empty team rosters now have visible drop targets
+- **Simple Workflow**: Removed complex draft logic in favor of direct team management
 - **Error Handling**: Improved login error handling and form validation
-- **Visual Feedback**: Enhanced drag-and-drop with proper visual cues
+- **Modal Interfaces**: Clean player selection and team management modals
 - **Code Organization**: Single-responsibility files for better maintainability
 
 ### **Files Backup**
-- `index_backup.php` - Original single-file version (preserved for reference)
+- `index_backup.php` - Original single-file version with draft system (preserved for reference)
 - All functionality migrated to modular structure without loss
 
 ## Commit Message Guidelines
