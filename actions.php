@@ -20,7 +20,7 @@ function handleFormSubmission($db) {
                         header('Location: ?page=admin');
                         exit;
                     } else {
-                        $loginError = 'Invalid email or password';
+                        $loginError = 'Invalid username or password';
                     }
                     break;
                     

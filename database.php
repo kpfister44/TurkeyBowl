@@ -92,10 +92,10 @@ function initDatabase() {
     ');
     
     
-    // Insert default admin user (password: admin123)
+    // Insert default admin user (password: KeP@01241992computer)
     $defaultAdmin = $db->prepare('INSERT OR IGNORE INTO admin_users (email, password_hash) VALUES (?, ?)');
-    $defaultAdmin->bindValue(1, 'admin@turkeybowl.com');
-    $defaultAdmin->bindValue(2, password_hash('admin123', PASSWORD_DEFAULT));
+    $defaultAdmin->bindValue(1, 'kpfister44');
+    $defaultAdmin->bindValue(2, password_hash('KeP@01241992computer', PASSWORD_DEFAULT));
     $defaultAdmin->execute();
     
     // Insert default event settings only if none exist

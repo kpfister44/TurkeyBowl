@@ -379,8 +379,8 @@ function generateLoginPage($loginError) {
     echo '<form method="POST">
             <input type="hidden" name="action" value="login">
             <div class="form-group">
-                <label for="email" class="form-label">Email:</label>
-                <input type="email" id="email" name="email" class="form-input" required>
+                <label for="email" class="form-label">Username:</label>
+                <input type="text" id="email" name="email" class="form-input" required>
             </div>
             <div class="form-group">
                 <label for="password" class="form-label">Password:</label>
@@ -388,9 +388,6 @@ function generateLoginPage($loginError) {
             </div>
             <button type="submit" class="btn btn-primary" style="width: 100%;">Login</button>
         </form>
-        <p style="margin-top: 20px; text-align: center; color: var(--metallic-silver); font-size: 0.9rem;">
-            Default: admin@turkeybowl.com / admin123
-        </p>
     </div>';
 }
 
