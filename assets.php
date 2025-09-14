@@ -72,11 +72,11 @@ function generateCSS() {
         }
 
         .logo {
-            font-family: \'Arial Black\', Arial, sans-serif;
+            font-family: Arial Black, Arial, sans-serif;
             font-size: 1.8rem;
             font-weight: 900;
             color: var(--bright-orange);
-            text-shadow: 
+            text-shadow:
                 2px 2px 4px rgba(0,0,0,0.8),
                 0 0 10px rgba(255,102,0,0.5);
             text-transform: uppercase;
@@ -158,7 +158,7 @@ function generateCSS() {
         }
 
         .card::before {
-            content: \'\';
+            content: "";
             position: absolute;
             top: 0;
             left: 0;
@@ -169,7 +169,7 @@ function generateCSS() {
         }
 
         .card-title {
-            font-family: \'Arial Black\', Arial, sans-serif;
+            font-family: Arial Black, Arial, sans-serif;
             font-size: 2rem;
             color: var(--bright-orange);
             margin-bottom: 20px;
@@ -292,7 +292,7 @@ function generateCSS() {
             font-weight: bold;
             color: var(--bright-orange);
             text-shadow: 0 0 10px rgba(255,102,0,0.5);
-            font-family: \'Arial Black\', Arial, sans-serif;
+            font-family: Arial Black, Arial, sans-serif;
         }
 
         .countdown-label {
@@ -655,6 +655,184 @@ function generateCSS() {
             }
         }
         
+        /* Team Management Interface - Matching Admin Tab Style */
+        .madden-team-manager {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 20px;
+        }
+
+        .player-pool, .team-section {
+            background: linear-gradient(145deg, #2a2a2a 0%, #1a1a1a 100%);
+            border: 2px solid var(--metallic-silver);
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow:
+                0 8px 16px rgba(0,0,0,0.4),
+                inset 0 1px 0 rgba(255,255,255,0.1),
+                inset 0 -1px 0 rgba(0,0,0,0.3),
+                0 0 30px rgba(192,192,192,0.1);
+            position: relative;
+        }
+
+        .player-pool::before, .team-section::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, var(--metallic-silver) 50%, transparent 100%);
+            opacity: 0.5;
+        }
+
+        .player-pool h3, .team-section h3 {
+            color: var(--gold-accent);
+            margin: 0 0 20px 0;
+            font-size: 1.2rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .player-list {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #444;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        .player-item {
+            padding: 12px 15px;
+            border-bottom: 1px solid #444;
+            background: rgba(255,255,255,0.05);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: var(--pure-white);
+            font-weight: 500;
+        }
+
+        .player-item:last-child {
+            border-bottom: none;
+        }
+
+        .player-item:hover {
+            background: rgba(255,102,0,0.1);
+            color: var(--bright-orange);
+        }
+
+        .player-item.selected {
+            background: rgba(255,102,0,0.2);
+            color: var(--bright-orange);
+            font-weight: bold;
+        }
+        
+        .team-list {
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+
+        .team-item {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid #444;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            overflow: hidden;
+        }
+
+        .team-item:hover {
+            border-color: var(--bright-orange);
+            background: rgba(255,102,0,0.1);
+        }
+        
+        .team-header-madden {
+            background: linear-gradient(180deg, var(--bright-orange) 0%, #cc5500 100%);
+            color: var(--pure-white);
+            padding: 12px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid var(--gold-accent);
+        }
+
+        .team-name-madden {
+            color: var(--pure-white);
+            font-weight: bold;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .team-count {
+            color: var(--pure-white);
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .team-players-madden {
+            padding: 0;
+            min-height: 40px;
+        }
+        
+        .team-player {
+            padding: 12px 15px;
+            border-bottom: 1px solid #444;
+            background: rgba(255,255,255,0.05);
+            font-size: 0.9rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--pure-white);
+            transition: background 0.2s ease;
+        }
+
+        .team-player:last-child {
+            border-bottom: none;
+        }
+
+        .team-player:hover {
+            background: rgba(255,102,0,0.1);
+        }
+        
+        .remove-player {
+            background: var(--alert-red);
+            color: white;
+            border: none;
+            border-radius: 3px;
+            padding: 2px 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+        
+        .remove-player:hover {
+            opacity: 1;
+        }
+        
+        .empty-team-message {
+            color: var(--metallic-silver);
+            font-style: italic;
+            text-align: center;
+            padding: 10px;
+        }
+        
+        @media (max-width: 768px) {
+            .madden-team-manager {
+                grid-template-columns: 1fr;
+                height: auto;
+            }
+            
+            .player-list, .team-list {
+                max-height: 300px;
+            }
+        }
+        
         /* Team Management Styles */
         .team-controls {
             display: flex;
@@ -786,7 +964,7 @@ function generateJavaScript($eventSettings) {
                 if (document.getElementById(\'seconds\')) document.getElementById(\'seconds\').textContent = seconds;
             } else {
                 if (document.getElementById(\'countdown-container\')) {
-                    document.getElementById(\'countdown-container\').innerHTML = \'<h1 style="color: var(--gold-accent); text-align: center; font-size: 4rem; font-family: \\\'Arial Black\\\', Arial, sans-serif; text-shadow: 3px 3px 6px rgba(0,0,0,0.8), 0 0 20px rgba(255,215,0,0.5); margin: 40px 0; animation: pulse 2s infinite;">GAME DAY!</h1><style>@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }</style>\';
+                    document.getElementById(\'countdown-container\').innerHTML = \'<h1 style="color: var(--gold-accent); text-align: center; font-size: 4rem; font-family: Arial Black, Arial, sans-serif; text-shadow: 3px 3px 6px rgba(0,0,0,0.8), 0 0 20px rgba(255,215,0,0.5); margin: 40px 0; animation: pulse 2s infinite;">GAME DAY!</h1><style>@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }</style>\';
                 }
             }
         }
@@ -804,7 +982,7 @@ function generateJavaScript($eventSettings) {
         }
 
         // Admin functionality
-        function switchTab(tabName) {
+        function switchTab(tabName, event) {
             // Hide all tabs
             const tabs = document.querySelectorAll(\'.tab-content\');
             tabs.forEach(tab => tab.classList.remove(\'active\'));
@@ -817,7 +995,9 @@ function generateJavaScript($eventSettings) {
             document.getElementById(tabName).classList.add(\'active\');
             
             // Activate selected button
-            event.target.classList.add(\'active\');
+            if (event && event.target) {
+                event.target.classList.add(\'active\');
+            }
             
             // Update URL without page reload
             const url = new URL(window.location);
@@ -1050,6 +1230,11 @@ function generateJavaScript($eventSettings) {
                                 <input type="text" id="edit-player-position-${id}" value="${position}" style="width: 100%;">
                             </div>
                             <div>
+                                <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Photo (Optional):</label>
+                                <input type="file" id="edit-player-photo-${id}" name="photo" class="form-input" accept=".png,.jpg,.jpeg" style="width: 100%;">
+                                <small style="color: var(--metallic-silver); font-size: 12px; margin-top: 2px; display: block;">Leave empty to keep current photo</small>
+                            </div>
+                            <div>
                                 <label style="color: var(--metallic-silver); font-size: 14px; display: block; margin-bottom: 5px;">Years Played:</label>
                                 <input type="number" id="edit-player-years-${id}" value="${yearsPlayed}" min="1" max="20" required style="width: 100%;">
                             </div>
@@ -1088,22 +1273,37 @@ function generateJavaScript($eventSettings) {
             const bio = document.getElementById(`edit-player-bio-${id}`).value;
             const yearsPlayed = document.getElementById(`edit-player-years-${id}`).value;
             const isCurrentYear = document.getElementById(`edit-player-current-${id}`).value;
+            const photoFile = document.getElementById(`edit-player-photo-${id}`).files[0];
             
             if (name && yearsPlayed && parseInt(yearsPlayed) >= 1 && parseInt(yearsPlayed) <= 20) {
-                const form = document.createElement(\'form\');
-                form.method = \'POST\';
-                form.innerHTML = `
-                    <input type="hidden" name="action" value="edit_player">
-                    <input type="hidden" name="id" value="${id}">
-                    <input type="hidden" name="name" value="${name}">
-                    <input type="hidden" name="nickname" value="${nickname || \'\'}">
-                    <input type="hidden" name="position" value="${position || \'\'}">
-                    <input type="hidden" name="bio" value="${bio || \'\'}">
-                    <input type="hidden" name="years_played" value="${yearsPlayed}">
-                    ${isCurrentYear === \'1\' ? \'<input type="hidden" name="current_year" value="1">\' : \'\'}
-                `;
-                document.body.appendChild(form);
-                form.submit();
+                const formData = new FormData();
+                formData.append(\'action\', \'edit_player\');
+                formData.append(\'id\', id);
+                formData.append(\'name\', name);
+                formData.append(\'nickname\', nickname || \'\');
+                formData.append(\'position\', position || \'\');
+                formData.append(\'bio\', bio || \'\');
+                formData.append(\'years_played\', yearsPlayed);
+                if (isCurrentYear === \'1\') {
+                    formData.append(\'current_year\', \'1\');
+                }
+                if (photoFile) {
+                    formData.append(\'photo\', photoFile);
+                }
+                
+                fetch(window.location.href, {
+                    method: \'POST\',
+                    body: formData
+                }).then(response => {
+                    if (response.ok) {
+                        location.reload();
+                    } else {
+                        alert(\'Error updating player. Please try again.\');
+                    }
+                }).catch(error => {
+                    console.error(\'Error:\', error);
+                    alert(\'Error updating player. Please try again.\');
+                });
             } else {
                 alert(\'Please provide a valid name and years played (1-20).\');
             }
@@ -1388,6 +1588,11 @@ function generateJavaScript($eventSettings) {
         
         // Draft setup form - captain selection
         document.addEventListener(\'DOMContentLoaded\', function() {
+            // Initialize Madden interface if elements exist
+            if (document.getElementById(\'available-players\') && document.getElementById(\'team-list\')) {
+                initializeMaddenInterface();
+            }
+            
             const numTeamsSelect = document.querySelector(\'select[name="num_teams"]\');
             const captainsContainer = document.getElementById(\'team-captains-container\');
             const captainSelects = document.getElementById(\'captain-selects\');
@@ -1777,8 +1982,190 @@ function generateJavaScript($eventSettings) {
             })
             .catch(error => {
                 console.error(\'Error:\', error);
-                showMessage(\'Error adding player to team.\', \'error\');
+                showMessage(\'Error adding player.\', \'error\');
             });
+        }
+        
+        // Madden-Style Team Management Functions
+        let selectedPlayerId = null;
+        
+        function initializeMaddenInterface() {
+            loadAvailablePlayers();
+            loadTeams();
+        }
+        
+        function loadAvailablePlayers() {
+            fetch(window.location.href, {
+                method: \'POST\',
+                headers: {
+                    \'Content-Type\': \'application/x-www-form-urlencoded\',
+                },
+                body: \'action=get_available_players\'
+            })
+            .then(response => response.json())
+            .then(players => {
+                displayAvailablePlayers(players);
+            })
+            .catch(error => {
+                console.error(\'Error loading available players:\', error);
+            });
+        }
+        
+        function displayAvailablePlayers(players) {
+            const container = document.getElementById(\'available-players\');
+            if (!container) return;
+            
+            let html = \'\';
+            players.forEach(player => {
+                html += \'<div class="player-item" data-player-id="\' + player.id + \'" data-player-name="\' + player.name + \'">\' + player.name + (player.nickname ? \' "\' + player.nickname + \'"\' : \'\') + \'</div>\';
+            });
+            
+            if (html === \'\') {
+                html = \'<div style="color: var(--metallic-silver); text-align: center; padding: 20px; font-style: italic;">All players have been assigned to teams</div>\';
+            }
+            
+            container.innerHTML = html;
+            
+            // Add click event listeners to player items
+            container.querySelectorAll(\'.player-item\').forEach(item => {
+                item.addEventListener(\'click\', function() {
+                    selectPlayer(this.dataset.playerId, this.dataset.playerName);
+                });
+            });
+        }
+        
+        function selectPlayer(playerId, playerName) {
+            // Remove previous selection
+            document.querySelectorAll(\'.player-item\').forEach(item => {
+                item.classList.remove(\'selected\');
+            });
+            
+            // Add selection to clicked player
+            event.target.classList.add(\'selected\');
+            selectedPlayerId = playerId;
+        }
+        
+        function loadTeams() {
+            fetch(window.location.href, {
+                method: \'POST\',
+                headers: {
+                    \'Content-Type\': \'application/x-www-form-urlencoded\',
+                },
+                body: \'action=get_teams_with_players\'
+            })
+            .then(response => response.json())
+            .then(teams => {
+                displayTeams(teams);
+            })
+            .catch(error => {
+                console.error(\'Error loading teams:\', error);
+            });
+        }
+        
+        function displayTeams(teams) {
+            const container = document.getElementById(\'team-list\');
+            if (!container) return;
+            
+            let html = \'\';
+            teams.forEach(team => {
+                const playerCount = team.players ? team.players.length : 0;
+                let playersHtml = \'\';
+                
+                if (team.players && team.players.length > 0) {
+                    team.players.forEach(player => {
+                        playersHtml += \'<div class="team-player"><span>\' + player.name + (player.nickname ? \' "\' + player.nickname + \'"\' : \'\') + \'</span><button class="remove-player" data-team-id="\' + team.id + \'" data-player-id="\' + player.id + \'" data-player-name="\' + player.name + \'">\u2715</button></div>\';
+                    });
+                } else {
+                    playersHtml = \'<div class="empty-team-message">No players assigned</div>\';
+                }
+                
+                html += \'<div class="team-item" data-team-id="\' + team.id + \'" data-team-name="\' + team.name + \'">\' +
+                       \'<div class="team-header-madden">\' +
+                       \'<div class="team-name-madden">\' + team.name + \'</div>\' +
+                       \'<div class="team-count">\' + playerCount + \'/8 players</div>\' +
+                       \'</div>\' +
+                       \'<div class="team-players-madden">\' + playersHtml + \'</div>\' +
+                       \'</div>\';
+            });
+            
+            if (html === \'\') {
+                html = \'<div style="color: var(--metallic-silver); text-align: center; padding: 20px; font-style: italic;">No teams created yet. Click "Add Team" to get started.</div>\';
+            }
+            
+            container.innerHTML = html;
+            
+            // Add click event listeners to team items
+            container.querySelectorAll(\'.team-item\').forEach(item => {
+                item.addEventListener(\'click\', function() {
+                    addPlayerToTeamMadden(this.dataset.teamId, this.dataset.teamName);
+                });
+            });
+            
+            // Add click event listeners to remove buttons
+            container.querySelectorAll(\'.remove-player\').forEach(button => {
+                button.addEventListener(\'click\', function(e) {
+                    e.stopPropagation(); // Prevent team click
+                    removePlayerFromTeamMadden(this.dataset.teamId, this.dataset.playerId, this.dataset.playerName);
+                });
+            });
+        }
+        
+        function addPlayerToTeamMadden(teamId, teamName) {
+            if (!selectedPlayerId) {
+                alert(\'Please select a player from the available players list first.\');
+                return;
+            }
+            
+            if (confirm(\'Confirm this pick? Add selected player to \' + teamName + \'?\')) {
+                fetch(window.location.href, {
+                    method: \'POST\',
+                    headers: {
+                        \'Content-Type\': \'application/x-www-form-urlencoded\',
+                    },
+                    body: \'action=add_player_to_team&team_id=\' + teamId + \'&player_id=\' + selectedPlayerId
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        selectedPlayerId = null;
+                        loadAvailablePlayers();
+                        loadTeams();
+                        showMessage(\'Player added successfully!\', \'success\');
+                    } else {
+                        showMessage(\'Error adding player: \' + (data.error || \'Unknown error\'), \'error\');
+                    }
+                })
+                .catch(error => {
+                    console.error(\'Error:\', error);
+                    showMessage(\'Error adding player to team.\', \'error\');
+                });
+            }
+        }
+        
+        function removePlayerFromTeamMadden(teamId, playerId, playerName) {
+            if (confirm(\'Remove \' + playerName + \' from the team?\')) {
+                fetch(window.location.href, {
+                    method: \'POST\',
+                    headers: {
+                        \'Content-Type\': \'application/x-www-form-urlencoded\',
+                    },
+                    body: \'action=remove_player_from_team&team_id=\' + teamId + \'&player_id=\' + playerId
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        loadAvailablePlayers();
+                        loadTeams();
+                        showMessage(\'Player removed successfully!\', \'success\');
+                    } else {
+                        showMessage(\'Error removing player: \' + (data.error || \'Unknown error\'), \'error\');
+                    }
+                })
+                .catch(error => {
+                    console.error(\'Error:\', error);
+                    showMessage(\'Error removing player from team.\', \'error\');
+                });
+            }
         }
     </script>';
 }

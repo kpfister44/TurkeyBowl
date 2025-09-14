@@ -415,12 +415,12 @@ function generateAdminPage($db, $eventSettings) {
     // Tab navigation
     echo '<div class="tab-container">
         <div class="tab-nav">
-            <button class="tab-button ' . ($currentTab === 'event' ? 'active' : '') . '" onclick="switchTab(\'event\')">Event Settings</button>
-            <button class="tab-button ' . ($currentTab === 'players' ? 'active' : '') . '" onclick="switchTab(\'players\')">Players</button>
-            <button class="tab-button ' . ($currentTab === 'teams' ? 'active' : '') . '" onclick="switchTab(\'teams\')">Teams</button>
-            <button class="tab-button ' . ($currentTab === 'championships' ? 'active' : '') . '" onclick="switchTab(\'championships\')">Championships</button>
-            <button class="tab-button ' . ($currentTab === 'awards' ? 'active' : '') . '" onclick="switchTab(\'awards\')">Awards</button>
-            <button class="tab-button ' . ($currentTab === 'records' ? 'active' : '') . '" onclick="switchTab(\'records\')">Records</button>
+            <button class="tab-button ' . ($currentTab === 'event' ? 'active' : '') . '" onclick="switchTab(\'event\', event)">Event Settings</button>
+            <button class="tab-button ' . ($currentTab === 'players' ? 'active' : '') . '" onclick="switchTab(\'players\', event)">Players</button>
+            <button class="tab-button ' . ($currentTab === 'teams' ? 'active' : '') . '" onclick="switchTab(\'teams\', event)">Teams</button>
+            <button class="tab-button ' . ($currentTab === 'championships' ? 'active' : '') . '" onclick="switchTab(\'championships\', event)">Championships</button>
+            <button class="tab-button ' . ($currentTab === 'awards' ? 'active' : '') . '" onclick="switchTab(\'awards\', event)">Awards</button>
+            <button class="tab-button ' . ($currentTab === 'records' ? 'active' : '') . '" onclick="switchTab(\'records\', event)">Records</button>
         </div>';
     
     // Generate individual admin tabs
@@ -807,87 +807,23 @@ function generateTeamsTab($currentTab, $db) {
             </form>
         </div>
         
-        <div class="teams-display">';
-    
-    while ($team = $teams->fetchArray(SQLITE3_ASSOC)) {
-        $hasTeams = true;
-        
-        // Get team players count
-        $playerCount = $db->query('SELECT COUNT(*) as count FROM team_players WHERE team_id = ' . $team['id'])->fetchArray(SQLITE3_ASSOC);
-        
-        // Get captain info
-        $captain = null;
-        if ($team['captain_id']) {
-            $captainQuery = $db->prepare('SELECT name FROM players WHERE id = ?');
-            $captainQuery->bindValue(1, $team['captain_id']);
-            $captainResult = $captainQuery->execute();
-            $captain = $captainResult->fetchArray(SQLITE3_ASSOC);
-        }
-        
-        echo '<div class="team-card" style="border-top: 4px solid var(--bright-orange);">
-            <div class="team-header">
-                <div class="team-title-section">
-                    <h4 style="color: var(--bright-orange);">' . htmlspecialchars($team['name']) . '</h4>
-                </div>';
-                
-        if ($captain) {
-            echo '<div class="captain-badge">
-                    <span style="color: var(--gold-accent);">👑 Captain: ' . htmlspecialchars($captain['name']) . '</span>
-                  </div>';
-        }
-        
-        echo '  <div class="team-stats">
-                    <span style="color: var(--metallic-silver);">' . $playerCount['count'] . ' Players</span>
-                    <button onclick="manageTeamPlayers(' . $team['id'] . ')" class="btn btn-secondary btn-sm" style="margin-left: 10px;">👥 Manage Players</button>
-                    <button onclick="deleteTeam(' . $team['id'] . ')" class="btn btn-danger btn-sm" style="margin-left: 5px;">🗑️ Delete</button>
+
+        <div class="madden-interface-header">
+            <h3 style="text-align: center; color: var(--gold-accent); margin-bottom: 20px;">Team Management Interface</h3>
+        </div>
+        <div class="madden-team-manager">
+            <div class="player-pool">
+                <h3>Available Players</h3>
+                <div class="player-list" id="available-players">
                 </div>
             </div>
-            <div class="team-roster" id="team-' . $team['id'] . '-roster">';
-        
-        // Get team players
-        $teamPlayers = $db->query('
-            SELECT p.*, tp.draft_order 
-            FROM players p 
-            JOIN team_players tp ON p.id = tp.player_id 
-            WHERE tp.team_id = ' . $team['id'] . ' 
-            ORDER BY tp.draft_order, p.name
-        ');
-        
-        while ($player = $teamPlayers->fetchArray(SQLITE3_ASSOC)) {
-            $isCaptain = $player['id'] == $team['captain_id'];
-            $captainIcon = $isCaptain ? '👑 ' : '';
-            
-            echo '<div class="roster-player">
-                <div class="player-info">
-                    ' . ($player['photo_path'] ? '<img src="' . htmlspecialchars($player['photo_path']) . '" alt="Photo" class="player-photo">' : '<div class="player-photo-placeholder">📷</div>') . '
-                    <div class="player-details">
-                        <strong style="color: var(--pure-white);">' . $captainIcon . htmlspecialchars($player['name']) . '</strong>';
-            if ($player['nickname']) {
-                echo '<br><small style="color: var(--gold-accent); font-style: italic;">"' . htmlspecialchars($player['nickname']) . '"</small>';
-            }
-            echo '<br><small style="color: var(--metallic-silver);">' . htmlspecialchars($player['position'] ?: 'Utility') . ' • ' . $player['years_played'] . ' years</small>
-                    </div>
+
+            <div class="team-section">
+                <h3>Teams</h3>
+                <div class="team-list" id="team-list">
                 </div>
-                <button onclick="removePlayerFromTeam(' . $team['id'] . ', ' . $player['id'] . ')" class="btn btn-danger btn-sm">Remove</button>
-            </div>';
-        }
-        
-        // Add empty state message for teams with no players
-        if ($playerCount['count'] == 0) {
-            echo '<div class="empty-roster-message" style="padding: 20px; text-align: center; color: var(--metallic-silver); font-style: italic; border: 2px dashed var(--metallic-silver); border-radius: 8px; margin: 10px 0;">
-                <p>No players on this team yet.</p>
-            </div>';
-        }
-        
-        echo '</div></div>';
-    }
-    
-    if (!$hasTeams) {
-        echo '<div style="text-align: center; padding: 40px; color: var(--metallic-silver);">
-            <p>No teams created yet.</p>
-            <p>Click "Add Team" to get started.</p>
+            </div>
         </div>';
-    }
-    
+        
     echo '</div></div></div>';
 }
